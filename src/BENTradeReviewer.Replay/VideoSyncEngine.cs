@@ -1,0 +1,91 @@
+using System.IO;
+using System.Windows.Controls;
+using System.Windows.Threading;
+
+namespace BENTradeReviewer.Replay;
+
+public sealed class VideoSyncEngine : IDisposable
+{
+    private readonly List<MediaElement> _players = new();
+    private readonly DispatcherTimer _clockTimer;
+    private double _currentPosition;
+    private double _totalDuration = 1;
+    private double _speed = 1;
+    private bool _playing;
+
+    public event Action<double, double>? PositionChanged;
+    public event Action<bool>? PlayStateChanged;
+    public bool IsPlaying => _playing;
+
+    public VideoSyncEngine()
+    {
+        _clockTimer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(33) };
+        _clockTimer.Tick += (_, _) => Tick();
+    }
+
+    public void RegisterPlayer(MediaElement player)
+    {
+        if (_players.Contains(player)) return;
+        player.LoadedBehavior = MediaState.Manual; player.UnloadedBehavior = MediaState.Manual; player.SpeedRatio = _speed;
+        _players.Add(player);
+    }
+
+    public void UnregisterAll() { Stop(); _players.Clear(); }
+
+    public void LoadVideos(IReadOnlyList<string> paths)
+    {
+        for (var i = 0; i < _players.Count; i++)
+        {
+            _players[i].Stop(); _players[i].Source = null;
+            if (i < paths.Count && File.Exists(paths[i])) _players[i].Source = new Uri(paths[i], UriKind.Absolute);
+        }
+        SeekTo(0);
+    }
+
+    public void SetDuration(double seconds) => _totalDuration = Math.Max(0.1, seconds);
+
+    public void Play()
+    {
+        if (_playing) return;
+        foreach (var p in _players) p.Play();
+        _playing = true; _clockTimer.Start(); PlayStateChanged?.Invoke(true);
+    }
+
+    public void Pause()
+    {
+        if (!_playing) return;
+        foreach (var p in _players) p.Pause();
+        _playing = false; _clockTimer.Stop(); PlayStateChanged?.Invoke(false);
+    }
+
+    public void TogglePlayPause() { if (_playing) Pause(); else Play(); }
+
+    public void Stop() { if (_playing) Pause(); else _clockTimer.Stop(); SeekTo(0); foreach (var p in _players) p.Stop(); }
+
+    public void SeekTo(double seconds)
+    {
+        _currentPosition = Math.Clamp(seconds, 0, _totalDuration);
+        var target = TimeSpan.FromSeconds(_currentPosition);
+        foreach (var p in _players) p.Position = target;
+        PositionChanged?.Invoke(_currentPosition, _totalDuration);
+    }
+
+    public void StepFrames(int frames, double assumedFps = 30) { Pause(); SeekTo(_currentPosition + frames / Math.Max(1, assumedFps)); }
+    public void SetSpeed(double speed) { _speed = Math.Clamp(speed, 0.25, 4); foreach (var p in _players) p.SpeedRatio = _speed; }
+
+    private void Tick()
+    {
+        if (!_playing) return;
+        if (_players.Count > 0 && _players[0].NaturalDuration.HasTimeSpan) _currentPosition = _players[0].Position.TotalSeconds;
+        else _currentPosition += _clockTimer.Interval.TotalSeconds * _speed;
+        if (_currentPosition >= _totalDuration) { Pause(); SeekTo(_totalDuration); return; }
+        foreach (var p in _players)
+        {
+            if (Math.Abs(p.Position.TotalSeconds - _currentPosition) > 0.10) p.Position = TimeSpan.FromSeconds(_currentPosition);
+        }
+        PositionChanged?.Invoke(_currentPosition, _totalDuration);
+    }
+
+    public void Dispose() { _clockTimer.Stop(); foreach (var p in _players) { try { p.Stop(); } catch { } } _players.Clear(); }
+}
+
