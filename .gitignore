@@ -11,3 +11,7 @@
 *.before_*
 *_BACKUP_*/
 .idea/
+/artifacts/
+/publish/
+TestResults/
+coverage/
