@@ -650,12 +650,33 @@
                                                                     <RowDefinition Height="Auto" />
                                                                     <RowDefinition Height="*" />
                                                                 </Grid.RowDefinitions>
-                                                                <TextBlock Grid.Row="0" Text="{Binding DayNumber}"
-                                                                           Foreground="{StaticResource BrushTextSecondary}"
-                                                                           FontSize="12"
-                                                                           FontWeight="Bold"
-                                                                           HorizontalAlignment="Left"
-                                                                           VerticalAlignment="Top" Margin="0,0,0,2"/>
+                                                                <StackPanel Grid.Row="0" Orientation="Horizontal"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                            Margin="0,0,0,2">
+                                                                    <TextBlock Text="{Binding DayNumber}"
+                                                                               Foreground="#D4AF37"
+                                                                               FontSize="12"
+                                                                               FontWeight="Bold"
+                                                                               VerticalAlignment="Center"
+                                                                               Margin="0,0,6,0"/>
+                                                                    <TextBlock Text="DAILY P&amp;L"
+                                                                               Foreground="{StaticResource BrushTextSecondary}"
+                                                                               FontSize="9"
+                                                                               FontWeight="Bold"
+                                                                               VerticalAlignment="Center">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock">
+                                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding HasTrades}" Value="False">
+                                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
+                                                                </StackPanel>
                                                                 <Grid Grid.Row="1" Margin="0,2,0,0" VerticalAlignment="Center" HorizontalAlignment="Center">
 
                                                                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
@@ -669,12 +690,6 @@
                                                                                 </Style.Triggers>
                                                                             </Style>
                                                                         </StackPanel.Style>
-
-                                                                        <TextBlock Text="DAILY P&amp;L"
-                                                                                   Foreground="{StaticResource BrushTextSecondary}"
-                                                                                   FontSize="9"
-                                                                                   FontWeight="Bold"
-                                                                                   HorizontalAlignment="Center"/>
 
                                                                         <TextBlock Text="{Binding DailyPnL, StringFormat={}{0:C2}}"
                                                                                    FontSize="14"
