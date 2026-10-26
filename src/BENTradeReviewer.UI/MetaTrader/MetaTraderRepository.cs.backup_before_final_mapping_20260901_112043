@@ -1,0 +1,369 @@
+using System.IO;
+using Microsoft.Data.Sqlite;
+using System.Globalization;
+
+namespace BENTradeReviewer.UI.MetaTrader;
+
+public sealed class MetaTraderRepository
+{
+    private readonly string _dbPath;
+
+    public MetaTraderRepository(string dbPath)
+    {
+        _dbPath = dbPath;
+        InitializeDatabase();
+    }
+
+    public string DatabasePath => _dbPath;
+
+    private SqliteConnection OpenConnection()
+    {
+        var connection =
+            new SqliteConnection(
+                $"Data Source={_dbPath}");
+
+        connection.Open();
+
+        return connection;
+    }
+
+    private void InitializeDatabase()
+    {
+        var directory =
+            Path.GetDirectoryName(_dbPath);
+
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
+
+        using var connection =
+            OpenConnection();
+
+        using var command =
+            connection.CreateCommand();
+
+        command.CommandText = @"
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS MetaTrades
+(
+    TradeId       TEXT PRIMARY KEY,
+    Symbol        TEXT NOT NULL,
+    Side          TEXT NOT NULL,
+    Quantity      TEXT NOT NULL,
+    EntryTime     TEXT NOT NULL,
+    EntryPrice    TEXT NOT NULL,
+    StopLoss      TEXT NULL,
+    PnL           TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS MetaTradeExits
+(
+    Id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    TradeId       TEXT NOT NULL,
+    Quantity      TEXT NOT NULL,
+    Price         TEXT NOT NULL,
+    Time          TEXT NOT NULL,
+
+    FOREIGN KEY (TradeId)
+        REFERENCES MetaTrades(TradeId)
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS IX_MetaTrades_EntryTime
+ON MetaTrades(EntryTime);
+
+CREATE INDEX IF NOT EXISTS IX_MetaTradeExits_TradeId
+ON MetaTradeExits(TradeId);
+";
+
+        command.ExecuteNonQuery();
+    }
+
+    public void UpsertTrade(
+        MetaTraderTrade trade)
+    {
+        using var connection =
+            OpenConnection();
+
+        using var transaction =
+            connection.BeginTransaction();
+
+        using (var command =
+               connection.CreateCommand())
+        {
+            command.Transaction =
+                transaction;
+
+            command.CommandText = @"
+INSERT INTO MetaTrades
+(
+    TradeId,
+    Symbol,
+    Side,
+    Quantity,
+    EntryTime,
+    EntryPrice,
+    StopLoss,
+    PnL
+)
+VALUES
+(
+    $TradeId,
+    $Symbol,
+    $Side,
+    $Quantity,
+    $EntryTime,
+    $EntryPrice,
+    $StopLoss,
+    $PnL
+)
+ON CONFLICT(TradeId)
+DO UPDATE SET
+    Symbol     = excluded.Symbol,
+    Side       = excluded.Side,
+    Quantity   = excluded.Quantity,
+    EntryTime  = excluded.EntryTime,
+    EntryPrice = excluded.EntryPrice,
+    StopLoss   = excluded.StopLoss,
+    PnL        = excluded.PnL;
+";
+
+            command.Parameters.AddWithValue(
+                "$TradeId",
+                trade.TradeId);
+
+            command.Parameters.AddWithValue(
+                "$Symbol",
+                trade.Symbol);
+
+            command.Parameters.AddWithValue(
+                "$Side",
+                trade.Side);
+
+            command.Parameters.AddWithValue(
+                "$Quantity",
+                ToInvariant(trade.Quantity));
+
+            command.Parameters.AddWithValue(
+                "$EntryTime",
+                trade.EntryTime.ToString("O"));
+
+            command.Parameters.AddWithValue(
+                "$EntryPrice",
+                ToInvariant(trade.EntryPrice));
+
+            command.Parameters.AddWithValue(
+                "$StopLoss",
+                trade.StopLoss.HasValue
+                    ? ToInvariant(trade.StopLoss.Value)
+                    : (object)DBNull.Value);
+
+            command.Parameters.AddWithValue(
+                "$PnL",
+                ToInvariant(trade.PnL));
+
+            command.ExecuteNonQuery();
+        }
+
+        using (var deleteCommand =
+               connection.CreateCommand())
+        {
+            deleteCommand.Transaction =
+                transaction;
+
+            deleteCommand.CommandText = @"
+DELETE FROM MetaTradeExits
+WHERE TradeId = $TradeId;
+";
+
+            deleteCommand.Parameters.AddWithValue(
+                "$TradeId",
+                trade.TradeId);
+
+            deleteCommand.ExecuteNonQuery();
+        }
+
+        foreach (var exit in
+                 trade.Exits.OrderBy(x => x.Time))
+        {
+            using var exitCommand =
+                connection.CreateCommand();
+
+            exitCommand.Transaction =
+                transaction;
+
+            exitCommand.CommandText = @"
+INSERT INTO MetaTradeExits
+(
+    TradeId,
+    Quantity,
+    Price,
+    Time
+)
+VALUES
+(
+    $TradeId,
+    $Quantity,
+    $Price,
+    $Time
+);
+";
+
+            exitCommand.Parameters.AddWithValue(
+                "$TradeId",
+                trade.TradeId);
+
+            exitCommand.Parameters.AddWithValue(
+                "$Quantity",
+                ToInvariant(exit.Quantity));
+
+            exitCommand.Parameters.AddWithValue(
+                "$Price",
+                ToInvariant(exit.Price));
+
+            exitCommand.Parameters.AddWithValue(
+                "$Time",
+                exit.Time.ToString("O"));
+
+            exitCommand.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public List<MetaTraderTrade> GetAllTrades()
+    {
+        var trades =
+            new List<MetaTraderTrade>();
+
+        using var connection =
+            OpenConnection();
+
+        using var command =
+            connection.CreateCommand();
+
+        command.CommandText = @"
+SELECT
+    TradeId,
+    Symbol,
+    Side,
+    Quantity,
+    EntryTime,
+    EntryPrice,
+    StopLoss,
+    PnL
+FROM MetaTrades
+ORDER BY EntryTime DESC;
+";
+
+        using var reader =
+            command.ExecuteReader();
+
+        while (reader.Read())
+        {
+            trades.Add(
+                new MetaTraderTrade
+                {
+                    TradeId =
+                        reader.GetString(0),
+
+                    Symbol =
+                        reader.GetString(1),
+
+                    Side =
+                        reader.GetString(2),
+
+                    Quantity =
+                        ParseDecimal(
+                            reader.GetString(3)),
+
+                    EntryTime =
+                        ParseDateTime(
+                            reader.GetString(4)),
+
+                    EntryPrice =
+                        ParseDecimal(
+                            reader.GetString(5)),
+
+                    StopLoss =
+                        reader.IsDBNull(6)
+                            ? null
+                            : ParseDecimal(
+                                reader.GetString(6)),
+
+                    PnL =
+                        ParseDecimal(
+                            reader.GetString(7))
+                });
+        }
+
+        foreach (var trade in trades)
+        {
+            using var exitCommand =
+                connection.CreateCommand();
+
+            exitCommand.CommandText = @"
+SELECT
+    Quantity,
+    Price,
+    Time
+FROM MetaTradeExits
+WHERE TradeId = $TradeId
+ORDER BY Time ASC, Id ASC;
+";
+
+            exitCommand.Parameters.AddWithValue(
+                "$TradeId",
+                trade.TradeId);
+
+            using var exitReader =
+                exitCommand.ExecuteReader();
+
+            while (exitReader.Read())
+            {
+                trade.Exits.Add(
+                    new MetaTraderExit
+                    {
+                        Quantity =
+                            ParseDecimal(
+                                exitReader.GetString(0)),
+
+                        Price =
+                            ParseDecimal(
+                                exitReader.GetString(1)),
+
+                        Time =
+                            ParseDateTime(
+                                exitReader.GetString(2))
+                    });
+            }
+        }
+
+        return trades;
+    }
+
+    private static string ToInvariant(
+        decimal value)
+    {
+        return value.ToString(
+            CultureInfo.InvariantCulture);
+    }
+
+    private static decimal ParseDecimal(
+        string value)
+    {
+        return decimal.Parse(
+            value,
+            NumberStyles.Number,
+            CultureInfo.InvariantCulture);
+    }
+
+    private static DateTime ParseDateTime(
+        string value)
+    {
+        return DateTime.Parse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.RoundtripKind);
+    }
+}

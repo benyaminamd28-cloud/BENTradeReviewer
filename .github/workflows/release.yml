@@ -1,0 +1,51 @@
+name: Publish Windows Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore BENTradeReviewer.sln
+
+      - name: Build Release x64
+        run: dotnet build BENTradeReviewer.sln --configuration Release --platform x64 --no-restore
+
+      - name: Run unit tests
+        run: dotnet test src/BENTradeReviewer.Tests/BENTradeReviewer.Tests.csproj --configuration Release --no-restore
+
+      - name: Publish self-contained Windows x64 app
+        run: dotnet publish src/BENTradeReviewer.UI/BENTradeReviewer.UI.csproj --configuration Release --runtime win-x64 --self-contained true -p:Platform=x64 -o artifacts/BENTradeReviewer-win-x64
+
+      - name: Package release ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          $archive = "artifacts/BENTradeReviewer-${{ github.ref_name }}-win-x64.zip"
+          Compress-Archive -Path artifacts/BENTradeReviewer-win-x64/* -DestinationPath $archive -Force
+          "RELEASE_ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Create GitHub Release and attach ZIP
+        uses: softprops/action-gh-release@v2
+        with:
+          name: BEN Trade Reviewer ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: ${{ env.RELEASE_ARCHIVE }}

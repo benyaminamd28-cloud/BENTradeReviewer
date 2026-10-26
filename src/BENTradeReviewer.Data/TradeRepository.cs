@@ -6,6 +6,12 @@ using BENTradeReviewer.Core.Models;
 
 namespace BENTradeReviewer.Data;
 
+internal sealed class JournalChecklistReadRow
+{
+    public JournalChecklistReadRow() { }
+    public string TradeId { get; set; } = string.Empty;
+    public string ChecklistJson { get; set; } = string.Empty;
+}
 public sealed class TradeRepository
 {
     private readonly string _connectionString;
@@ -95,6 +101,81 @@ CREATE TABLE IF NOT EXISTS TradeTags (
     TagText TEXT NOT NULL,
     FOREIGN KEY (TradeId) REFERENCES Trades(TradeId) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS TradeJournalChecklists (
+    TradeId TEXT PRIMARY KEY,
+    ChecklistJson TEXT NOT NULL,
+    UpdatedAt TEXT NOT NULL,
+    FOREIGN KEY (TradeId) REFERENCES Trades(TradeId) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS TradeMarketContexts (
+    TradeId TEXT PRIMARY KEY,
+    Session TEXT NOT NULL DEFAULT 'Unknown',
+
+    GexCallWall INTEGER NOT NULL DEFAULT 0,
+    GexPutWall INTEGER NOT NULL DEFAULT 0,
+    GexGammaFlip INTEGER NOT NULL DEFAULT 0,
+    GexHighLevel INTEGER NOT NULL DEFAULT 0,
+    GexNearLevel INTEGER NOT NULL DEFAULT 0,
+    GexRelation TEXT NOT NULL DEFAULT 'Neutral',
+
+    IcebergPresent INTEGER NOT NULL DEFAULT 0,
+    IcebergNative INTEGER NOT NULL DEFAULT 0,
+    IcebergSynthetic INTEGER NOT NULL DEFAULT 0,
+    IcebergWithTrade INTEGER NOT NULL DEFAULT 0,
+    IcebergAgainstTrade INTEGER NOT NULL DEFAULT 0,
+    IcebergHeld INTEGER NOT NULL DEFAULT 0,
+    IcebergFailed INTEGER NOT NULL DEFAULT 0,
+
+    DomBidPressure INTEGER NOT NULL DEFAULT 0,
+    DomAskPressure INTEGER NOT NULL DEFAULT 0,
+    DomRepeatedRejection INTEGER NOT NULL DEFAULT 0,
+    DomRefill INTEGER NOT NULL DEFAULT 0,
+    DomLiquidityPull INTEGER NOT NULL DEFAULT 0,
+    DomPressureDivergence INTEGER NOT NULL DEFAULT 0,
+
+    FootprintPositiveDelta INTEGER NOT NULL DEFAULT 0,
+    FootprintNegativeDelta INTEGER NOT NULL DEFAULT 0,
+    FootprintStackedImbalance INTEGER NOT NULL DEFAULT 0,
+    FootprintDeltaDivergence INTEGER NOT NULL DEFAULT 0,
+    FootprintHvn INTEGER NOT NULL DEFAULT 0,
+    FootprintLvnRejection INTEGER NOT NULL DEFAULT 0,
+
+    BoxBuyPressure INTEGER NOT NULL DEFAULT 0,
+    BoxSellPressure INTEGER NOT NULL DEFAULT 0,
+    BoxPressureIncreasing INTEGER NOT NULL DEFAULT 0,
+    BoxPressureDecreasing INTEGER NOT NULL DEFAULT 0,
+    BoxPressureDivergence INTEGER NOT NULL DEFAULT 0,
+
+    LocationDayHigh INTEGER NOT NULL DEFAULT 0,
+    LocationDayLow INTEGER NOT NULL DEFAULT 0,
+    LocationPreviousDayHigh INTEGER NOT NULL DEFAULT 0,
+    LocationPreviousDayLow INTEGER NOT NULL DEFAULT 0,
+    LocationPreviousClose INTEGER NOT NULL DEFAULT 0,
+    LocationSessionOpen INTEGER NOT NULL DEFAULT 0,
+    LocationVwap INTEGER NOT NULL DEFAULT 0,
+    LocationOpeningRange INTEGER NOT NULL DEFAULT 0,
+    LocationSupport INTEGER NOT NULL DEFAULT 0,
+    LocationResistance INTEGER NOT NULL DEFAULT 0,
+
+    MarketTrending INTEGER NOT NULL DEFAULT 0,
+    MarketRanging INTEGER NOT NULL DEFAULT 0,
+    MarketExpansion INTEGER NOT NULL DEFAULT 0,
+    MarketCompression INTEGER NOT NULL DEFAULT 0,
+    MarketChoppy INTEGER NOT NULL DEFAULT 0,
+
+    EventPhase TEXT NOT NULL DEFAULT 'None',
+    EventName TEXT,
+
+    TradeThesis TEXT NOT NULL DEFAULT 'Other',
+    ExecutionQuality TEXT NOT NULL DEFAULT 'Acceptable',
+    ContextConfidence INTEGER NOT NULL DEFAULT 0,
+    TradeQuality INTEGER NOT NULL DEFAULT 0,
+
+    FOREIGN KEY (TradeId) REFERENCES Trades(TradeId) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS IDX_TradeMarketContexts_TradeId
+ON TradeMarketContexts(TradeId);
 CREATE INDEX IF NOT EXISTS IDX_Trades_EntryTime ON Trades(EntryTime);
 CREATE INDEX IF NOT EXISTS IDX_Trades_Symbol ON Trades(Symbol);
 CREATE INDEX IF NOT EXISTS IDX_TradeVideos_TradeId ON TradeVideos(TradeId);
@@ -223,7 +304,6 @@ ON CONFLICT(TradeId) DO UPDATE SET
     MAEUSD=excluded.MAEUSD,
     MFETicks=excluded.MFETicks,
     MFEUSD=excluded.MFEUSD,
-    Notes=excluded.Notes,
     IsWin=excluded.IsWin,
     ImportedAt=excluded.ImportedAt;",
             args,
@@ -274,21 +354,8 @@ ON CONFLICT(TradeId) DO UPDATE SET
                 tx);
         }
 
-        await conn.ExecuteAsync(
-            "DELETE FROM TradeTags WHERE TradeId=@TradeId",
-            new { trade.TradeId },
-            tx);
+        // Journal tags are user-maintained; importing recorder data must not clear them.
 
-        foreach (var tag in trade.Tags
-                     .Where(t => !string.IsNullOrWhiteSpace(t))
-                     .Select(t => t.Trim())
-                     .Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            await conn.ExecuteAsync(
-                "INSERT INTO TradeTags(TradeId,TagText) VALUES(@TradeId,@TagText)",
-                new { trade.TradeId, TagText = tag },
-                tx);
-        }
 
         await tx.CommitAsync();
     }
@@ -308,6 +375,40 @@ ON CONFLICT(TradeId) DO UPDATE SET
         return await MapRowsAsync(conn, rows);
     }
 
+    public async Task<IReadOnlyDictionary<string, string>> GetAllJournalChecklistsAsync()
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync();
+        var rows = await conn.QueryAsync<JournalChecklistReadRow>(
+            "SELECT TradeId, ChecklistJson FROM TradeJournalChecklists");
+        return rows
+            .Where(row => !string.IsNullOrWhiteSpace(row.TradeId))
+            .GroupBy(row => row.TradeId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last().ChecklistJson ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase);
+    }
+    public async Task<string?> GetJournalChecklistJsonAsync(string tradeId)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync();
+        return await conn.QueryFirstOrDefaultAsync<string?>(
+            "SELECT ChecklistJson FROM TradeJournalChecklists WHERE TradeId=@TradeId",
+            new { TradeId = tradeId });
+    }
+
+    public async Task SaveJournalChecklistJsonAsync(string tradeId, string checklistJson)
+    {
+        await using var conn = CreateConnection();
+        await conn.OpenAsync();
+        await conn.ExecuteAsync(@"
+INSERT INTO TradeJournalChecklists(TradeId, ChecklistJson, UpdatedAt)
+VALUES(@TradeId, @ChecklistJson, @UpdatedAt)
+ON CONFLICT(TradeId) DO UPDATE SET
+    ChecklistJson=excluded.ChecklistJson,
+    UpdatedAt=excluded.UpdatedAt;",
+            new { TradeId = tradeId, ChecklistJson = checklistJson,
+                UpdatedAt = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture) });
+    }
     public async Task UpdateTradeNotesAndTagsAsync(string tradeId, string notes, IEnumerable<string> tags)
     {
         await using var conn = CreateConnection();
@@ -329,9 +430,178 @@ ON CONFLICT(TradeId) DO UPDATE SET
             await LoadRelationsAsync(conn, trade);
             list.Add(trade);
         }
-        return list;
+        return list.Where(t => System.IO.Directory.Exists(t.FolderDirectory)).ToList();
     }
 
+    public async Task UpsertTradeMarketContextAsync(string tradeId, TradeMarketContext context)
+    {
+        if (string.IsNullOrWhiteSpace(tradeId))
+            return;
+
+        context ??= new TradeMarketContext();
+
+        await using var conn = CreateConnection();
+        await conn.OpenAsync();
+
+        const string sql = @"
+INSERT INTO TradeMarketContexts
+(
+    TradeId, Session,
+    GexCallWall, GexPutWall, GexGammaFlip, GexHighLevel, GexNearLevel,
+    GexRelation,
+    IcebergPresent, IcebergNative, IcebergSynthetic, IcebergWithTrade,
+    IcebergAgainstTrade, IcebergHeld, IcebergFailed,
+    DomBidPressure, DomAskPressure, DomRepeatedRejection, DomRefill,
+    DomLiquidityPull, DomPressureDivergence,
+    FootprintPositiveDelta, FootprintNegativeDelta, FootprintStackedImbalance,
+    FootprintDeltaDivergence, FootprintHvn, FootprintLvnRejection,
+    BoxBuyPressure, BoxSellPressure, BoxPressureIncreasing,
+    BoxPressureDecreasing, BoxPressureDivergence,
+    LocationDayHigh, LocationDayLow, LocationPreviousDayHigh,
+    LocationPreviousDayLow, LocationPreviousClose, LocationSessionOpen,
+    LocationVwap, LocationOpeningRange, LocationSupport, LocationResistance,
+    MarketTrending, MarketRanging, MarketExpansion, MarketCompression, MarketChoppy,
+    EventPhase, EventName, TradeThesis, ExecutionQuality,
+    ContextConfidence, TradeQuality
+)
+VALUES
+(
+    @TradeId, @Session,
+    @GexCallWall, @GexPutWall, @GexGammaFlip, @GexHighLevel, @GexNearLevel,
+    @GexRelation,
+    @IcebergPresent, @IcebergNative, @IcebergSynthetic, @IcebergWithTrade,
+    @IcebergAgainstTrade, @IcebergHeld, @IcebergFailed,
+    @DomBidPressure, @DomAskPressure, @DomRepeatedRejection, @DomRefill,
+    @DomLiquidityPull, @DomPressureDivergence,
+    @FootprintPositiveDelta, @FootprintNegativeDelta, @FootprintStackedImbalance,
+    @FootprintDeltaDivergence, @FootprintHvn, @FootprintLvnRejection,
+    @BoxBuyPressure, @BoxSellPressure, @BoxPressureIncreasing,
+    @BoxPressureDecreasing, @BoxPressureDivergence,
+    @LocationDayHigh, @LocationDayLow, @LocationPreviousDayHigh,
+    @LocationPreviousDayLow, @LocationPreviousClose, @LocationSessionOpen,
+    @LocationVwap, @LocationOpeningRange, @LocationSupport, @LocationResistance,
+    @MarketTrending, @MarketRanging, @MarketExpansion, @MarketCompression, @MarketChoppy,
+    @EventPhase, @EventName, @TradeThesis, @ExecutionQuality,
+    @ContextConfidence, @TradeQuality
+)
+ON CONFLICT(TradeId) DO UPDATE SET
+    Session=excluded.Session,
+    GexCallWall=excluded.GexCallWall,
+    GexPutWall=excluded.GexPutWall,
+    GexGammaFlip=excluded.GexGammaFlip,
+    GexHighLevel=excluded.GexHighLevel,
+    GexNearLevel=excluded.GexNearLevel,
+    GexRelation=excluded.GexRelation,
+    IcebergPresent=excluded.IcebergPresent,
+    IcebergNative=excluded.IcebergNative,
+    IcebergSynthetic=excluded.IcebergSynthetic,
+    IcebergWithTrade=excluded.IcebergWithTrade,
+    IcebergAgainstTrade=excluded.IcebergAgainstTrade,
+    IcebergHeld=excluded.IcebergHeld,
+    IcebergFailed=excluded.IcebergFailed,
+    DomBidPressure=excluded.DomBidPressure,
+    DomAskPressure=excluded.DomAskPressure,
+    DomRepeatedRejection=excluded.DomRepeatedRejection,
+    DomRefill=excluded.DomRefill,
+    DomLiquidityPull=excluded.DomLiquidityPull,
+    DomPressureDivergence=excluded.DomPressureDivergence,
+    FootprintPositiveDelta=excluded.FootprintPositiveDelta,
+    FootprintNegativeDelta=excluded.FootprintNegativeDelta,
+    FootprintStackedImbalance=excluded.FootprintStackedImbalance,
+    FootprintDeltaDivergence=excluded.FootprintDeltaDivergence,
+    FootprintHvn=excluded.FootprintHvn,
+    FootprintLvnRejection=excluded.FootprintLvnRejection,
+    BoxBuyPressure=excluded.BoxBuyPressure,
+    BoxSellPressure=excluded.BoxSellPressure,
+    BoxPressureIncreasing=excluded.BoxPressureIncreasing,
+    BoxPressureDecreasing=excluded.BoxPressureDecreasing,
+    BoxPressureDivergence=excluded.BoxPressureDivergence,
+    LocationDayHigh=excluded.LocationDayHigh,
+    LocationDayLow=excluded.LocationDayLow,
+    LocationPreviousDayHigh=excluded.LocationPreviousDayHigh,
+    LocationPreviousDayLow=excluded.LocationPreviousDayLow,
+    LocationPreviousClose=excluded.LocationPreviousClose,
+    LocationSessionOpen=excluded.LocationSessionOpen,
+    LocationVwap=excluded.LocationVwap,
+    LocationOpeningRange=excluded.LocationOpeningRange,
+    LocationSupport=excluded.LocationSupport,
+    LocationResistance=excluded.LocationResistance,
+    MarketTrending=excluded.MarketTrending,
+    MarketRanging=excluded.MarketRanging,
+    MarketExpansion=excluded.MarketExpansion,
+    MarketCompression=excluded.MarketCompression,
+    MarketChoppy=excluded.MarketChoppy,
+    EventPhase=excluded.EventPhase,
+    EventName=excluded.EventName,
+    TradeThesis=excluded.TradeThesis,
+    ExecutionQuality=excluded.ExecutionQuality,
+    ContextConfidence=excluded.ContextConfidence,
+    TradeQuality=excluded.TradeQuality;";
+
+        await conn.ExecuteAsync(sql, new
+        {
+            TradeId = tradeId,
+            context.Session,
+            GexCallWall = context.GexCallWall ? 1 : 0,
+            GexPutWall = context.GexPutWall ? 1 : 0,
+            GexGammaFlip = context.GexGammaFlip ? 1 : 0,
+            GexHighLevel = context.GexHighLevel ? 1 : 0,
+            GexNearLevel = context.GexNearLevel ? 1 : 0,
+            context.GexRelation,
+
+            IcebergPresent = context.IcebergPresent ? 1 : 0,
+            IcebergNative = context.IcebergNative ? 1 : 0,
+            IcebergSynthetic = context.IcebergSynthetic ? 1 : 0,
+            IcebergWithTrade = context.IcebergWithTrade ? 1 : 0,
+            IcebergAgainstTrade = context.IcebergAgainstTrade ? 1 : 0,
+            IcebergHeld = context.IcebergHeld ? 1 : 0,
+            IcebergFailed = context.IcebergFailed ? 1 : 0,
+
+            DomBidPressure = context.DomBidPressure ? 1 : 0,
+            DomAskPressure = context.DomAskPressure ? 1 : 0,
+            DomRepeatedRejection = context.DomRepeatedRejection ? 1 : 0,
+            DomRefill = context.DomRefill ? 1 : 0,
+            DomLiquidityPull = context.DomLiquidityPull ? 1 : 0,
+            DomPressureDivergence = context.DomPressureDivergence ? 1 : 0,
+
+            FootprintPositiveDelta = context.FootprintPositiveDelta ? 1 : 0,
+            FootprintNegativeDelta = context.FootprintNegativeDelta ? 1 : 0,
+            FootprintStackedImbalance = context.FootprintStackedImbalance ? 1 : 0,
+            FootprintDeltaDivergence = context.FootprintDeltaDivergence ? 1 : 0,
+            FootprintHvn = context.FootprintHvn ? 1 : 0,
+            FootprintLvnRejection = context.FootprintLvnRejection ? 1 : 0,
+
+            BoxBuyPressure = context.BoxBuyPressure ? 1 : 0,
+            BoxSellPressure = context.BoxSellPressure ? 1 : 0,
+            BoxPressureIncreasing = context.BoxPressureIncreasing ? 1 : 0,
+            BoxPressureDecreasing = context.BoxPressureDecreasing ? 1 : 0,
+            BoxPressureDivergence = context.BoxPressureDivergence ? 1 : 0,
+
+            LocationDayHigh = context.LocationDayHigh ? 1 : 0,
+            LocationDayLow = context.LocationDayLow ? 1 : 0,
+            LocationPreviousDayHigh = context.LocationPreviousDayHigh ? 1 : 0,
+            LocationPreviousDayLow = context.LocationPreviousDayLow ? 1 : 0,
+            LocationPreviousClose = context.LocationPreviousClose ? 1 : 0,
+            LocationSessionOpen = context.LocationSessionOpen ? 1 : 0,
+            LocationVwap = context.LocationVwap ? 1 : 0,
+            LocationOpeningRange = context.LocationOpeningRange ? 1 : 0,
+            LocationSupport = context.LocationSupport ? 1 : 0,
+            LocationResistance = context.LocationResistance ? 1 : 0,
+
+            MarketTrending = context.MarketTrending ? 1 : 0,
+            MarketRanging = context.MarketRanging ? 1 : 0,
+            MarketExpansion = context.MarketExpansion ? 1 : 0,
+            MarketCompression = context.MarketCompression ? 1 : 0,
+            MarketChoppy = context.MarketChoppy ? 1 : 0,
+
+            context.EventPhase,
+            context.EventName,
+            context.TradeThesis,
+            context.ExecutionQuality,
+            context.ContextConfidence,
+            context.TradeQuality
+        });
+    }
     private static Trade MapTrade(dynamic r)
     {
         return new Trade
@@ -442,8 +712,8 @@ ON CONFLICT(TradeId) DO UPDATE SET
             Message = e.Message?.ToString() ?? string.Empty,
             VideoTimestampOffsetSeconds = e.VideoTimestampOffsetSeconds is null ? 0 : Convert.ToDouble(e.VideoTimestampOffsetSeconds)
         }).ToList();
-        trade.Tags = (await conn.QueryAsync<string>("SELECT TagText FROM TradeTags WHERE TradeId=@TradeId ORDER BY TagId", new { trade.TradeId })).AsList();
+        trade.Tags = (await conn.QueryAsync<string>("SELECT TagText FROM TradeTags WHERE TradeId=@TradeId ORDER BY TagId", new { trade.TradeId })).AsList();        trade.MarketContext = await conn.QueryFirstOrDefaultAsync<TradeMarketContext>(
+            "SELECT * FROM TradeMarketContexts WHERE TradeId=@TradeId",
+            new { trade.TradeId }) ?? new TradeMarketContext();
     }
 }
-
-

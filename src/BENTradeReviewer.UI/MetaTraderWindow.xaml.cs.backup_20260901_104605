@@ -1,0 +1,54 @@
+using System.Windows;
+
+namespace BENTradeReviewer;
+
+public partial class MetaTraderWindow : Window
+{
+    private readonly MetaTraderViewModel _viewModel;
+    public MetaTraderWindow()
+    {
+        InitializeComponent();
+
+        _viewModel =
+            new MetaTraderViewModel();
+
+        DataContext =
+            _viewModel;
+    }
+
+    private void Back_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var startup = new StartupWindow();
+
+        Application.Current.MainWindow = startup;
+
+        startup.Show();
+
+        Close();
+    }
+
+    private void ViewDetail_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedTrade is null)
+        {
+            MessageBox.Show(
+                "Select a MetaTrader trade first.",
+                "MetaTrader Journal",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
+
+        var detail =
+            new MetaTraderTradeDetailWindow(
+                _viewModel.SelectedTrade);
+
+        detail.Owner = this;
+
+        detail.ShowDialog();
+    }}

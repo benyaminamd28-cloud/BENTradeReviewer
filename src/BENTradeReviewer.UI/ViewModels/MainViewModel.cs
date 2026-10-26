@@ -17,7 +17,7 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty] private string _windowTitle = "BEN TRADE REVIEWER — Institutional Trade Journal";
     [ObservableProperty] private int _selectedNavigationIndex;
-    [ObservableProperty] private string _recorderFolderPath = @"C:\Users\REDLINE2\Documents\BEN_TradeRecorder";
+    [ObservableProperty] private string _recorderFolderPath = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments), "BEN_TradeRecorder");
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string _statusMessage = "Ready";
     [ObservableProperty] private DateTime _selectedMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
@@ -32,6 +32,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private Trade? _selectedTrade;
     [ObservableProperty] private DateTime? _selectedDate;
 
+    public TradeAnalysisViewModel AnalysisVM { get; }
     public DayReviewViewModel DayReviewVM { get; }
     public SettingsViewModel SettingsVM { get; }
     public IAsyncRelayCommand RefreshAllCommand { get; }
@@ -44,6 +45,7 @@ public partial class MainViewModel : ObservableObject
         var appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BENTradeReviewer");
         _repository = new TradeRepository(Path.Combine(appData, "trades.db"));
         _importer = new RecorderImporter(_repository);
+        AnalysisVM = new TradeAnalysisViewModel();
         DayReviewVM = new DayReviewViewModel(_repository);
         SettingsVM = new SettingsViewModel();
         SettingsVM.RecorderPath = RecorderFolderPath;
@@ -60,12 +62,55 @@ public partial class MainViewModel : ObservableObject
         try
         {
             StatusMessage = "Scanning recorder archive...";
-            var count = await _importer.ScanAndImportAsync(RecorderFolderPath);
+
+            var count =
+                await _importer.ScanAndImportAsync(
+                    RecorderFolderPath);
+
+            var existingTrades = await _repository.GetAllTradesAsync();
+
+            if (existingTrades.Count > 0)
+            {
+                var latestTradeDate = existingTrades
+                    .Where(t => t.EntryTime != default)
+                    .Max(t => t.EntryTime.Date);
+
+                SelectedMonth = new DateTime(
+                    latestTradeDate.Year,
+                    latestTradeDate.Month,
+                    1);
+            }
+
             await RefreshDataAsync(false);
-            StatusMessage = count > 0 ? $"Ready. Imported/updated {count} trade folder(s)." : "Ready. No new trade folders found.";
+
+            if (_importer.LastImportFailedCount == 0)
+            {
+                StatusMessage =
+                    count > 0
+                        ? $"Ready. Imported/updated {count} trade folder(s)."
+                        : "Ready. No new trade folders found.";
+            }
+            else
+            {
+                var errors = string.Join(
+                    " | ",
+                    _importer.LastImportErrors.Take(3));
+
+                StatusMessage =
+                    $"Ready with import errors: {count} processed, " +
+                    $"{_importer.LastImportFailedCount} failed. " +
+                    errors;
+            }
         }
-        catch (Exception ex) { StatusMessage = $"Initialization error: {ex.Message}"; }
-        finally { IsBusy = false; }
+        catch (Exception ex)
+        {
+            StatusMessage =
+                $"Initialization error: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     public async Task RefreshDataAsync() => await RefreshDataAsync(true);
@@ -84,6 +129,8 @@ public partial class MainViewModel : ObservableObject
             if (!string.IsNullOrWhiteSpace(SearchQuery)) query = query.Where(t => t.Symbol.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) || t.Notes.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase) || t.Tags.Any(tag => tag.Contains(SearchQuery, StringComparison.OrdinalIgnoreCase)));
             var list = query.ToList();
             FilteredTrades = new ObservableCollection<Trade>(list);
+            var journalChecklists = await _repository.GetAllJournalChecklistsAsync();
+            AnalysisVM.UpdateTrades(list, journalChecklists);
 
             // Dashboard KPIs are scoped to the selected calendar month.
             var monthTrades = list
@@ -180,15 +227,61 @@ public partial class MainViewModel : ObservableObject
     private async Task ImportNewTradesAsync()
     {
         IsBusy = true;
+
         try
         {
-            StatusMessage = "Importing recorder folders...";
-            var count = await _importer.ScanAndImportAsync(RecorderFolderPath);
+            StatusMessage =
+                "Importing recorder folders...";
+
+            var count =
+                await _importer.ScanAndImportAsync(
+                    RecorderFolderPath);
+
+            var existingTrades = await _repository.GetAllTradesAsync();
+
+            if (existingTrades.Count > 0)
+            {
+                var latestTradeDate = existingTrades
+                    .Where(t => t.EntryTime != default)
+                    .Max(t => t.EntryTime.Date);
+
+                SelectedMonth = new DateTime(
+                    latestTradeDate.Year,
+                    latestTradeDate.Month,
+                    1);
+            }
+
             await RefreshDataAsync(false);
-            StatusMessage = $"Import complete: {count} trade folder(s) processed.";
+
+              if (SelectedDate.HasValue)
+                  DayReviewVM.LoadDay(SelectedDate.Value, FilteredTrades.Where(t => t.EntryTime.Date == SelectedDate.Value.Date).ToList());
+
+            if (_importer.LastImportFailedCount == 0)
+            {
+                StatusMessage =
+                    $"Import complete: {count} trade folder(s) processed.";
+            }
+            else
+            {
+                var errors = string.Join(
+                    " | ",
+                    _importer.LastImportErrors.Take(3));
+
+                StatusMessage =
+                    $"Import complete: {count} processed, " +
+                    $"{_importer.LastImportFailedCount} failed. " +
+                    errors;
+            }
         }
-        catch (Exception ex) { StatusMessage = $"Import error: {ex.Message}"; }
-        finally { IsBusy = false; }
+        catch (Exception ex)
+        {
+            StatusMessage =
+                $"Import error: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 }
 
@@ -227,17 +320,8 @@ public sealed class CalendarWeekViewModel : ObservableObject
 }
 public partial class SettingsViewModel : ObservableObject
 {
-    [ObservableProperty] private string _recorderPath = @"C:\Users\REDLINE2\Documents\BEN_TradeRecorder";
+    [ObservableProperty] private string _recorderPath = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.MyDocuments), "BEN_TradeRecorder");
     [ObservableProperty] private bool _enableHardwareAcceleration = true;
     [ObservableProperty] private bool _autoWatchFolder = true;
     [ObservableProperty] private double _defaultSpeed = 1.0;
 }
-
-
-
-
-
-
-
-
-

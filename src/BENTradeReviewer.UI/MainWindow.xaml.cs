@@ -180,6 +180,47 @@ public partial class MainWindow : Window
         VideoTranslate.X = 0.0;
         VideoTranslate.Y = 0.0;
     }
-}
 
+    private void TimelineControlButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (sender is not Button button)
+            return;
 
+        // Restore previous button to its normal style.
+        if (_lastTimelineControlButton is not null &&
+            !ReferenceEquals(_lastTimelineControlButton, button))
+        {
+            _lastTimelineControlButton.ClearValue(
+                Button.BackgroundProperty);
+
+            _lastTimelineControlButton.ClearValue(
+                Button.ForegroundProperty);
+        }
+
+        // Highlight the last clicked button.
+        button.Background =
+            (System.Windows.Media.Brush)FindResource(
+                "BrushAccentBlue");
+
+        button.Foreground =
+            (System.Windows.Media.Brush)FindResource(
+                "BrushTextPrimary");
+
+        _lastTimelineControlButton = button;
+    }
+    private Button? _lastTimelineControlButton;
+
+    private void FitVideo_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        VideoScale.ScaleX = 1.0;
+        VideoScale.ScaleY = 1.0;
+
+        VideoTranslate.X = 0.0;
+        VideoTranslate.Y = 0.0;
+
+        TimelineControlButton_Click(sender, e);
+    }}

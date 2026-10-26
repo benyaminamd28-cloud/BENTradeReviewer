@@ -1,0 +1,911 @@
+<Window x:Class="BENTradeReviewer.MetaTraderWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="BEN TRADE REVIEWER — MetaTrader"
+        Height="950"
+        Width="1600"
+        MinHeight="700"
+        MinWidth="1150"
+        Background="{StaticResource BrushBackgroundDark}"
+        WindowStartupLocation="CenterScreen">
+
+    <Grid>
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- ====================================================== -->
+        <!-- HEADER -->
+        <!-- ====================================================== -->
+
+        <Border Grid.Row="0"
+                Background="{StaticResource BrushSurfaceDark}"
+                BorderBrush="{StaticResource BrushBorder}"
+                BorderThickness="0,0,0,1"
+                Padding="15,9">
+
+            <DockPanel LastChildFill="False">
+
+                <StackPanel Orientation="Horizontal"
+                            DockPanel.Dock="Left">
+
+                    <TextBlock Text="BEN"
+                               Foreground="{StaticResource BrushAccentBlue}"
+                               FontSize="18"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center"/>
+
+                    <TextBlock Text=" TRADE REVIEWER"
+                               Foreground="{StaticResource BrushTextPrimary}"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Margin="0,0,18,0"
+                               VerticalAlignment="Center"/>
+
+                    <TextBlock Text="METATRADER JOURNAL"
+                               Foreground="{StaticResource BrushAccentPurple}"
+                               FontSize="12"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center"/>
+
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal"
+                            DockPanel.Dock="Right">
+
+                    <Button Content="IMPORT EA DATA"
+                            Click="Import_Click"
+                            Style="{StaticResource TerminalButton}"
+                            Margin="0,0,6,0"/>
+
+                    <Button Content="BACK"
+                            Click="Back_Click"
+                            Style="{StaticResource TerminalButton}"/>
+
+                </StackPanel>
+
+            </DockPanel>
+
+        </Border>
+
+        <!-- ====================================================== -->
+        <!-- KPI BAR -->
+        <!-- ====================================================== -->
+
+        <Border Grid.Row="1"
+                Background="{StaticResource BrushBackgroundDark}"
+                Padding="15,10">
+
+            <UniformGrid Columns="8">
+
+                <Border Style="{StaticResource CardPanel}"
+                        Margin="3">
+                    <StackPanel>
+                        <TextBlock Text="NET P&amp;L"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   FontSize="10"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="{Binding NetPnl, StringFormat={}{0:C2}}"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   Margin="0,4,0,0">
+
+                            <TextBlock.Style>
+
+                                <Style TargetType="TextBlock">
+
+                                    <Setter Property="Foreground"
+                                            Value="{StaticResource BrushGreenBright}"/>
+
+                                    <Style.Triggers>
+
+                                        <DataTrigger
+                                            Binding="{Binding NetPnl, Converter={StaticResource IsNegativeConverter}}"
+                                            Value="True">
+
+                                            <Setter Property="Foreground"
+                                                    Value="{StaticResource BrushRedBright}"/>
+
+                                        </DataTrigger>
+
+                                    </Style.Triggers>
+
+                                </Style>
+
+                            </TextBlock.Style>
+
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardPanel}"
+                        Margin="3">
+                    <StackPanel>
+                        <TextBlock Text="COMMISSION"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   FontSize="10"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="{Binding Commission, StringFormat={}{0:C2}}"
+                                   Foreground="{StaticResource BrushRedBright}"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardPanel}"
+                        Margin="3">
+                    <StackPanel>
+                        <TextBlock Text="GROSS P&amp;L"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   FontSize="10"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="{Binding GrossPnl, StringFormat={}{0:C2}}"
+                                   Foreground="{StaticResource BrushTextPrimary}"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardPanel}"
+                        Margin="3">
+                    <StackPanel>
+                        <TextBlock Text="SWAP"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   FontSize="10"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="{Binding Swap, StringFormat={}{0:C2}}"
+                                   Foreground="{StaticResource BrushTextPrimary}"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardPanel}"
+                        Margin="3">
+                    <StackPanel>
+                        <TextBlock Text="FEES"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   FontSize="10"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="{Binding Fee, StringFormat={}{0:C2}}"
+                                   Foreground="{StaticResource BrushTextPrimary}"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardPanel}"
+                        Margin="3">
+                    <StackPanel>
+                        <TextBlock Text="WIN RATE"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   FontSize="10"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="{Binding WinRate, StringFormat={}{0:F1}%}"
+                                   Foreground="{StaticResource BrushTextPrimary}"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardPanel}"
+                        Margin="3">
+                    <StackPanel>
+                        <TextBlock Text="PROFIT FACTOR"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   FontSize="10"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="{Binding ProfitFactor, StringFormat={}{0:F2}}"
+                                   Foreground="{StaticResource BrushAccentBlue}"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardPanel}"
+                        Margin="3">
+                    <StackPanel>
+                        <TextBlock Text="TOTAL TRADES"
+                                   Foreground="{StaticResource BrushTextSecondary}"
+                                   FontSize="10"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="{Binding TotalTrades}"
+                                   Foreground="{StaticResource BrushTextPrimary}"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   Margin="0,4,0,0"/>
+                    </StackPanel>
+                </Border>
+
+            </UniformGrid>
+
+        </Border>
+
+        <!-- ====================================================== -->
+        <!-- MAIN -->
+        <!-- ====================================================== -->
+
+        <Grid Grid.Row="2"
+              Margin="15,0,15,10">
+
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- CONTROLS -->
+
+            <DockPanel Grid.Row="0"
+                       Margin="0,0,0,8">
+
+                <StackPanel Orientation="Horizontal"
+                            DockPanel.Dock="Left">
+
+                    <Button Content="◀"
+                            Click="PreviousMonth_Click"
+                            Style="{StaticResource TerminalButton}"
+                            Width="32"
+                            Height="28"/>
+
+                    <TextBlock Text="{Binding SelectedMonth, StringFormat={}{0:MMMM yyyy}}"
+                               Foreground="{StaticResource BrushTextPrimary}"
+                               FontSize="16"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center"
+                               Margin="15,0"/>
+
+                    <Button Content="▶"
+                            Click="NextMonth_Click"
+                            Style="{StaticResource TerminalButton}"
+                            Width="32"
+                            Height="28"/>
+
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal"
+                            DockPanel.Dock="Right">
+
+                    <TextBlock Text="Instrument:"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,5,0"/>
+
+                    <ComboBox Width="100"
+                              SelectedValuePath="Content"
+                              SelectedValue="{Binding SelectedInstrumentFilter}"
+                              Background="{StaticResource BrushSurfaceLight}"
+                              Foreground="{StaticResource BrushTextPrimary}"
+                              TextElement.Foreground="{StaticResource BrushTextPrimary}">
+
+                        <ComboBoxItem Content="ALL"/>
+                        <ComboBoxItem Content="EURUSD"/>
+                        <ComboBoxItem Content="GBPUSD"/>
+                        <ComboBoxItem Content="XAUUSD"/>
+                        <ComboBoxItem Content="NAS100"/>
+                        <ComboBoxItem Content="US30"/>
+                        <ComboBoxItem Content="USDJPY"/>
+                        <ComboBoxItem Content="AUDUSD"/>
+                        <ComboBoxItem Content="USDCAD"/>
+
+                    </ComboBox>
+
+                    <TextBlock Text="Side:"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               VerticalAlignment="Center"
+                               Margin="12,0,5,0"/>
+
+                    <ComboBox Width="85"
+                              SelectedValuePath="Content"
+                              SelectedValue="{Binding SelectedSideFilter}"
+                              Background="{StaticResource BrushSurfaceLight}"
+                              Foreground="{StaticResource BrushTextPrimary}"
+                              TextElement.Foreground="{StaticResource BrushTextPrimary}">
+
+                        <ComboBoxItem Content="ALL"/>
+                        <ComboBoxItem Content="BUY"/>
+                        <ComboBoxItem Content="SELL"/>
+
+                    </ComboBox>
+
+                    <TextBlock Text="Outcome:"
+                               Foreground="{StaticResource BrushTextSecondary}"
+                               VerticalAlignment="Center"
+                               Margin="12,0,5,0"/>
+
+                    <ComboBox Width="95"
+                              SelectedValuePath="Content"
+                              SelectedValue="{Binding SelectedOutcomeFilter}"
+                              Background="{StaticResource BrushSurfaceLight}"
+                              Foreground="{StaticResource BrushTextPrimary}"
+                              TextElement.Foreground="{StaticResource BrushTextPrimary}">
+
+                        <ComboBoxItem Content="ALL"/>
+                        <ComboBoxItem Content="WIN"/>
+                        <ComboBoxItem Content="LOSS"/>
+
+                    </ComboBox>
+
+                </StackPanel>
+
+            </DockPanel>
+
+            <!-- ================================================== -->
+            <!-- CALENDAR -->
+            <!-- ================================================== -->
+
+            <Grid Grid.Row="1">
+
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="7*"/>
+                    <ColumnDefinition Width="3*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- LEFT = CALENDAR -->
+
+                <Border Grid.Column="0"
+                        Style="{StaticResource CardPanel}"
+                        Padding="8"
+                        Margin="0,0,10,0">
+
+                    <Grid>
+
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="30"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- WEEK HEADER -->
+
+                        <Grid Grid.Row="0">
+
+                            <Grid.ColumnDefinitions>
+
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="145"/>
+
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0"
+                                       Text="MON"
+                                       Foreground="{StaticResource BrushTextSecondary}"
+                                       FontSize="10"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+
+                            <TextBlock Grid.Column="1"
+                                       Text="TUE"
+                                       Foreground="{StaticResource BrushTextSecondary}"
+                                       FontSize="10"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+
+                            <TextBlock Grid.Column="2"
+                                       Text="WED"
+                                       Foreground="{StaticResource BrushTextSecondary}"
+                                       FontSize="10"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+
+                            <TextBlock Grid.Column="3"
+                                       Text="THU"
+                                       Foreground="{StaticResource BrushTextSecondary}"
+                                       FontSize="10"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+
+                            <TextBlock Grid.Column="4"
+                                       Text="FRI"
+                                       Foreground="{StaticResource BrushTextSecondary}"
+                                       FontSize="10"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+
+                            <TextBlock Grid.Column="5"
+                                       Text="WEEKLY P&amp;L"
+                                       Foreground="{StaticResource BrushTextPrimary}"
+                                       FontSize="10"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+
+                        </Grid>
+
+                        <!-- WEEKS -->
+
+                        <ItemsControl Grid.Row="1"
+                                      ItemsSource="{Binding WeeklyCalendarRows}">
+
+                            <ItemsControl.ItemsPanel>
+
+                                <ItemsPanelTemplate>
+                                    <StackPanel/>
+                                </ItemsPanelTemplate>
+
+                            </ItemsControl.ItemsPanel>
+
+                            <ItemsControl.ItemTemplate>
+
+                                <DataTemplate>
+
+                                    <Grid Height="88">
+
+                                        <Grid.ColumnDefinitions>
+
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="145"/>
+
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- DAYS -->
+
+                                        <ItemsControl Grid.Column="0"
+                                                      Grid.ColumnSpan="5"
+                                                      ItemsSource="{Binding Days}">
+
+                                            <ItemsControl.ItemsPanel>
+
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="5"/>
+                                                </ItemsPanelTemplate>
+
+                                            </ItemsControl.ItemsPanel>
+
+                                            <ItemsControl.ItemTemplate>
+
+                                                <DataTemplate>
+
+                                                    <Border Margin="2"
+                                                            CornerRadius="4"
+                                                            BorderThickness="0.5"
+                                                            BorderBrush="{StaticResource BrushBorder}">
+
+                                                        <Border.Style>
+
+                                                            <Style TargetType="Border">
+
+                                                                <Setter Property="Background"
+                                                                        Value="#12161C"/>
+
+                                                                <Style.Triggers>
+
+                                                                    <DataTrigger Binding="{Binding IsCurrentMonth}"
+                                                                                 Value="False">
+
+                                                                        <Setter Property="Opacity"
+                                                                                Value="0.28"/>
+
+                                                                    </DataTrigger>
+
+                                                                    <MultiDataTrigger>
+
+                                                                        <MultiDataTrigger.Conditions>
+
+                                                                            <Condition Binding="{Binding HasTrades}"
+                                                                                       Value="True"/>
+
+                                                                            <Condition Binding="{Binding IsProfitable}"
+                                                                                       Value="True"/>
+
+                                                                        </MultiDataTrigger.Conditions>
+
+                                                                        <Setter Property="Background"
+                                                                                Value="#1A2D23"/>
+
+                                                                    </MultiDataTrigger>
+
+                                                                    <MultiDataTrigger>
+
+                                                                        <MultiDataTrigger.Conditions>
+
+                                                                            <Condition Binding="{Binding HasTrades}"
+                                                                                       Value="True"/>
+
+                                                                            <Condition Binding="{Binding IsLosing}"
+                                                                                       Value="True"/>
+
+                                                                        </MultiDataTrigger.Conditions>
+
+                                                                        <Setter Property="Background"
+                                                                                Value="#2D1A1D"/>
+
+                                                                    </MultiDataTrigger>
+
+                                                                    <MultiDataTrigger>
+
+                                                                        <MultiDataTrigger.Conditions>
+
+                                                                            <Condition Binding="{Binding HasTrades}"
+                                                                                       Value="True"/>
+
+                                                                            <Condition Binding="{Binding IsProfitable}"
+                                                                                       Value="False"/>
+
+                                                                            <Condition Binding="{Binding IsLosing}"
+                                                                                       Value="False"/>
+
+                                                                        </MultiDataTrigger.Conditions>
+
+                                                                        <Setter Property="Background"
+                                                                                Value="#3A2814"/>
+
+                                                                    </MultiDataTrigger>
+
+                                                                </Style.Triggers>
+
+                                                            </Style>
+
+                                                        </Border.Style>
+
+                                                        <Button Click="CalendarDay_Click"
+                                                                Tag="{Binding Date}"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                HorizontalContentAlignment="Stretch"
+                                                                VerticalContentAlignment="Stretch">
+
+                                                            <Grid Margin="7">
+
+                                                                <TextBlock Text="{Binding DayNumber}"
+                                                                           Foreground="{StaticResource BrushTextSecondary}"
+                                                                           FontSize="12"
+                                                                           FontWeight="Bold"
+                                                                           HorizontalAlignment="Left"
+                                                                           VerticalAlignment="Top"/>
+
+                                                                <Grid VerticalAlignment="Center"
+                                                                      HorizontalAlignment="Center">
+
+                                                                    <StackPanel>
+
+                                                                        <StackPanel.Style>
+
+                                                                            <Style TargetType="StackPanel">
+
+                                                                                <Setter Property="Visibility"
+                                                                                        Value="Visible"/>
+
+                                                                                <Style.Triggers>
+
+                                                                                    <DataTrigger Binding="{Binding HasTrades}"
+                                                                                                 Value="False">
+
+                                                                                        <Setter Property="Visibility"
+                                                                                                Value="Collapsed"/>
+
+                                                                                    </DataTrigger>
+
+                                                                                </Style.Triggers>
+
+                                                                            </Style>
+
+                                                                        </StackPanel.Style>
+
+                                                                        <TextBlock Text="DAILY P&amp;L"
+                                                                                   Foreground="{StaticResource BrushTextSecondary}"
+                                                                                   FontSize="9"
+                                                                                   FontWeight="Bold"
+                                                                                   HorizontalAlignment="Center"/>
+
+                                                                        <TextBlock Text="{Binding DailyPnL, StringFormat={}{0:C2}}"
+                                                                                   FontSize="14"
+                                                                                   FontWeight="Bold"
+                                                                                   HorizontalAlignment="Center">
+
+                                                                            <TextBlock.Style>
+
+                                                                                <Style TargetType="TextBlock">
+
+                                                                                    <Setter Property="Foreground"
+                                                                                            Value="{StaticResource BrushGreenBright}"/>
+
+                                                                                    <Style.Triggers>
+
+                                                                                        <DataTrigger Binding="{Binding IsLosing}"
+                                                                                                     Value="True">
+
+                                                                                            <Setter Property="Foreground"
+                                                                                                    Value="{StaticResource BrushRedBright}"/>
+
+                                                                                        </DataTrigger>
+
+                                                                                    </Style.Triggers>
+
+                                                                                </Style>
+
+                                                                            </TextBlock.Style>
+
+                                                                        </TextBlock>
+
+                                                                        <TextBlock Text="{Binding TradeCount, StringFormat={}{0} trades}"
+                                                                                   Foreground="{StaticResource BrushTextSecondary}"
+                                                                                   FontSize="10"
+                                                                                   HorizontalAlignment="Center"
+                                                                                   Margin="0,2,0,0"/>
+
+                                                                    </StackPanel>
+
+                                                                    <TextBlock Text="NO TRADE"
+                                                                               Foreground="{StaticResource BrushTextSecondary}"
+                                                                               FontSize="11"
+                                                                               FontWeight="Bold">
+
+                                                                        <TextBlock.Style>
+
+                                                                            <Style TargetType="TextBlock">
+
+                                                                                <Setter Property="Visibility"
+                                                                                        Value="Collapsed"/>
+
+                                                                                <Style.Triggers>
+
+                                                                                    <DataTrigger Binding="{Binding HasTrades}"
+                                                                                                 Value="False">
+
+                                                                                        <Setter Property="Visibility"
+                                                                                                Value="Visible"/>
+
+                                                                                    </DataTrigger>
+
+                                                                                </Style.Triggers>
+
+                                                                            </Style>
+
+                                                                        </TextBlock.Style>
+
+                                                                    </TextBlock>
+
+                                                                </Grid>
+
+                                                            </Grid>
+
+                                                        </Button>
+
+                                                    </Border>
+
+                                                </DataTemplate>
+
+                                            </ItemsControl.ItemTemplate>
+
+                                        </ItemsControl>
+
+                                        <!-- WEEKLY P&L -->
+
+                                        <Border Grid.Column="5"
+                                                Margin="2"
+                                                CornerRadius="4"
+                                                BorderBrush="{StaticResource BrushBorder}"
+                                                BorderThickness="1">
+
+                                            <StackPanel HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center">
+
+                                                <TextBlock Text="{Binding WeeklyPnL, StringFormat={}{0:C2}}"
+                                                           FontSize="16"
+                                                           FontWeight="Bold"
+                                                           HorizontalAlignment="Center">
+
+                                                    <TextBlock.Style>
+
+                                                        <Style TargetType="TextBlock">
+
+                                                            <Setter Property="Foreground"
+                                                                    Value="{StaticResource BrushGreenBright}"/>
+
+                                                            <Style.Triggers>
+
+                                                                <DataTrigger Binding="{Binding IsLosing}"
+                                                                             Value="True">
+
+                                                                    <Setter Property="Foreground"
+                                                                            Value="{StaticResource BrushRedBright}"/>
+
+                                                                </DataTrigger>
+
+                                                            </Style.Triggers>
+
+                                                        </Style>
+
+                                                    </TextBlock.Style>
+
+                                                </TextBlock>
+
+                                                <TextBlock Text="WEEK"
+                                                           Foreground="{StaticResource BrushTextSecondary}"
+                                                           FontSize="9"
+                                                           HorizontalAlignment="Center"/>
+
+                                            </StackPanel>
+
+                                        </Border>
+
+                                    </Grid>
+
+                                </DataTemplate>
+
+                            </ItemsControl.ItemTemplate>
+
+                        </ItemsControl>
+
+                    </Grid>
+
+                </Border>
+
+                <!-- ================================================= -->
+                <!-- RIGHT = SELECTED DAY + TRADES -->
+                <!-- ================================================= -->
+
+                <Border Grid.Column="1"
+                        Style="{StaticResource CardPanel}"
+                        Padding="10">
+
+                    <Grid>
+
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Text="{Binding SelectedDate, StringFormat={}{0:D}, TargetNullValue=SELECT A DAY}"
+                                   Foreground="{StaticResource BrushTextPrimary}"
+                                   FontSize="17"
+                                   FontWeight="Bold"
+                                   Margin="0,0,0,10"/>
+
+                        <UniformGrid Grid.Row="1"
+                                     Columns="3"
+                                     Margin="0,0,0,10">
+
+                            <StackPanel Margin="3">
+                                <TextBlock Text="TRADES"
+                                           Foreground="{StaticResource BrushTextSecondary}"
+                                           FontSize="9"
+                                           FontWeight="Bold"/>
+                                <TextBlock Text="{Binding SelectedDayTradeCount}"
+                                           Foreground="{StaticResource BrushTextPrimary}"
+                                           FontSize="17"
+                                           FontWeight="Bold"/>
+                            </StackPanel>
+
+                            <StackPanel Margin="3">
+                                <TextBlock Text="DAY NET"
+                                           Foreground="{StaticResource BrushTextSecondary}"
+                                           FontSize="9"
+                                           FontWeight="Bold"/>
+                                <TextBlock Text="{Binding SelectedDayNetPnl, StringFormat={}{0:C2}}"
+                                           Foreground="{StaticResource BrushGreenBright}"
+                                           FontSize="17"
+                                           FontWeight="Bold"/>
+                            </StackPanel>
+
+                            <StackPanel Margin="3">
+                                <TextBlock Text="COMMISSION"
+                                           Foreground="{StaticResource BrushTextSecondary}"
+                                           FontSize="9"
+                                           FontWeight="Bold"/>
+                                <TextBlock Text="{Binding SelectedDayCommission, StringFormat={}{0:C2}}"
+                                           Foreground="{StaticResource BrushRedBright}"
+                                           FontSize="17"
+                                           FontWeight="Bold"/>
+                            </StackPanel>
+
+                        </UniformGrid>
+
+                        <DataGrid Grid.Row="2"
+                                  ItemsSource="{Binding SelectedDayTrades}"
+                                  SelectedItem="{Binding SelectedTrade, Mode=TwoWay}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  Background="Transparent"
+                                  Foreground="{StaticResource BrushTextPrimary}"
+                                  BorderThickness="0"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="None"
+                                  RowBackground="Transparent"
+                                  AlternatingRowBackground="#1A202C">
+
+                            <DataGrid.Columns>
+
+                                <DataGridTextColumn Header="TIME"
+                                                    Binding="{Binding EntryTime, StringFormat={}{0:HH:mm:ss}}"
+                                                    Width="75"/>
+
+                                <DataGridTextColumn Header="SYMBOL"
+                                                    Binding="{Binding Symbol}"
+                                                    Width="75"/>
+
+                                <DataGridTextColumn Header="SIDE"
+                                                    Binding="{Binding Side}"
+                                                    Width="55"/>
+
+                                <DataGridTextColumn Header="QTY"
+                                                    Binding="{Binding Quantity, StringFormat={}{0:F2}}"
+                                                    Width="60"/>
+
+                                <DataGridTextColumn Header="ENTRY"
+                                                    Binding="{Binding EntryPrice, StringFormat={}{0:F5}}"
+                                                    Width="90"/>
+
+                                <DataGridTextColumn Header="EXITS"
+                                                    Binding="{Binding Exits.Count}"
+                                                    Width="55"/>
+
+                                <DataGridTextColumn Header="NET"
+                                                    Binding="{Binding NetPnl, StringFormat={}{0:C2}}"
+                                                    Width="85"/>
+
+                            </DataGrid.Columns>
+
+                        </DataGrid>
+
+                        <Button Grid.Row="3"
+                                Content="VIEW SELECTED TRADE"
+                                Click="ViewDetail_Click"
+                                Style="{StaticResource TerminalButton}"
+                                HorizontalAlignment="Right"
+                                Width="170"
+                                Margin="0,8,0,0"/>
+
+                    </Grid>
+
+                </Border>
+
+            </Grid>
+
+        </Grid>
+
+        <!-- ====================================================== -->
+        <!-- STATUS -->
+        <!-- ====================================================== -->
+
+        <Border Grid.Row="3"
+                Background="{StaticResource BrushSurfaceDark}"
+                BorderBrush="{StaticResource BrushBorder}"
+                BorderThickness="0,1,0,0"
+                Padding="10,0">
+
+            <DockPanel>
+
+                <TextBlock Text="{Binding StatusMessage}"
+                           Foreground="{StaticResource BrushTextSecondary}"
+                           VerticalAlignment="Center"
+                           FontSize="11"/>
+
+                <TextBlock Text="{Binding DataFolder}"
+                           DockPanel.Dock="Right"
+                           Foreground="{StaticResource BrushTextMuted}"
+                           FontSize="10"
+                           VerticalAlignment="Center"/>
+
+            </DockPanel>
+
+        </Border>
+
+    </Grid>
+
+</Window>

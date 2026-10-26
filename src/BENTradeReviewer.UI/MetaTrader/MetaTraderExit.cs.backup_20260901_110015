@@ -1,0 +1,10 @@
+namespace BENTradeReviewer.UI.MetaTrader;
+
+public sealed class MetaTraderExit
+{
+    public decimal Quantity { get; set; }
+
+    public decimal Price { get; set; }
+
+    public DateTime Time { get; set; }
+}

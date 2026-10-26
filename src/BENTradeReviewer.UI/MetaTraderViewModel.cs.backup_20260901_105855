@@ -1,0 +1,244 @@
+using System;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.IO;
+using System.Linq;
+using System.Runtime.CompilerServices;
+
+using BENTradeReviewer.UI.MetaTrader;
+
+namespace BENTradeReviewer;
+
+public sealed class MetaTraderViewModel : INotifyPropertyChanged
+{
+    private readonly MetaTraderRepository _repository;
+    private readonly MetaTraderImporter _importer;
+
+    private string _dataFolder = string.Empty;
+    private string _statusMessage = "MetaTrader journal ready.";
+
+    private MetaTraderTrade? _selectedTrade;
+
+    public ObservableCollection<MetaTraderTrade> Trades { get; }
+        = new ObservableCollection<MetaTraderTrade>();
+
+    public string DataFolder
+    {
+        get => _dataFolder;
+
+        private set
+        {
+            if (_dataFolder == value)
+                return;
+
+            _dataFolder = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public MetaTraderTrade? SelectedTrade
+    {
+        get => _selectedTrade;
+
+        set
+        {
+            if (ReferenceEquals(_selectedTrade, value))
+                return;
+
+            _selectedTrade = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string StatusMessage
+    {
+        get => _statusMessage;
+
+        private set
+        {
+            if (_statusMessage == value)
+                return;
+
+            _statusMessage = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public int LastFilesFound { get; private set; }
+
+    public int LastImported { get; private set; }
+
+    public int LastFailed { get; private set; }
+
+    public string LastImportErrors { get; private set; }
+        = string.Empty;
+
+    public int TotalTrades =>
+        Trades.Count;
+
+    public int WinningTrades =>
+        Trades.Count(x => x.PnL > 0m);
+
+    public int LosingTrades =>
+        Trades.Count(x => x.PnL < 0m);
+
+    public decimal NetPnL =>
+        Trades.Sum(x => x.PnL);
+
+    public double WinRate =>
+        TotalTrades == 0
+            ? 0d
+            : WinningTrades * 100d / TotalTrades;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public MetaTraderViewModel()
+    {
+        var appData =
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData);
+
+        var applicationDirectory =
+            Path.Combine(
+                appData,
+                "BENTradeReviewer");
+
+        Directory.CreateDirectory(
+            applicationDirectory);
+
+        var databasePath =
+            Path.Combine(
+                applicationDirectory,
+                "metatrader.db");
+
+        _repository =
+            new MetaTraderRepository(
+                databasePath);
+
+        _importer =
+            new MetaTraderImporter(
+                _repository);
+
+        var roaming =
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.ApplicationData);
+
+        DataFolder =
+            Path.Combine(
+                roaming,
+                "MetaQuotes",
+                "Terminal",
+                "Common",
+                "Files",
+                "BEN_MetaTrader");
+
+        Directory.CreateDirectory(
+            DataFolder);
+
+        // IMPORTANT:
+        // Load ALL rows already present in SQLite.
+        LoadTrades();
+    }
+
+    public void Import()
+    {
+        try
+        {
+            var result =
+                _importer.ImportFolder(
+                    DataFolder);
+
+            LastFilesFound =
+                result.FilesFound;
+
+            LastImported =
+                result.Imported;
+
+            LastFailed =
+                result.Failed;
+
+            LastImportErrors =
+                string.Join(
+                    Environment.NewLine,
+                    result.Errors.Take(20));
+
+            // Always reload the complete database.
+            LoadTrades();
+
+            StatusMessage =
+                $"Found {LastFilesFound} JSON | " +
+                $"Imported {LastImported} | " +
+                $"Failed {LastFailed} | " +
+                $"SQLite Trades {Trades.Count}";
+
+            OnPropertyChanged(nameof(LastFilesFound));
+            OnPropertyChanged(nameof(LastImported));
+            OnPropertyChanged(nameof(LastFailed));
+            OnPropertyChanged(nameof(LastImportErrors));
+            OnPropertyChanged(nameof(StatusMessage));
+        }
+        catch (Exception ex)
+        {
+            LastFilesFound = 0;
+            LastImported = 0;
+            LastFailed = 1;
+            LastImportErrors = ex.ToString();
+
+            StatusMessage =
+                "MetaTrader import failed.";
+
+            OnPropertyChanged(nameof(LastFilesFound));
+            OnPropertyChanged(nameof(LastImported));
+            OnPropertyChanged(nameof(LastFailed));
+            OnPropertyChanged(nameof(LastImportErrors));
+            OnPropertyChanged(nameof(StatusMessage));
+        }
+    }
+
+    public void LoadTrades()
+    {
+        // Keep selected TradeId so refresh does not lose selection.
+        var selectedId =
+            SelectedTrade?.TradeId;
+
+        var databaseTrades =
+            _repository.GetAllTrades();
+
+        Trades.Clear();
+
+        foreach (var trade in databaseTrades)
+        {
+            Trades.Add(trade);
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedId))
+        {
+            SelectedTrade =
+                Trades.FirstOrDefault(
+                    x => x.TradeId == selectedId);
+        }
+
+        if (SelectedTrade is null &&
+            Trades.Count > 0)
+        {
+            SelectedTrade =
+                Trades[0];
+        }
+
+        OnPropertyChanged(nameof(TotalTrades));
+        OnPropertyChanged(nameof(WinningTrades));
+        OnPropertyChanged(nameof(LosingTrades));
+        OnPropertyChanged(nameof(NetPnL));
+        OnPropertyChanged(nameof(WinRate));
+        OnPropertyChanged(nameof(SelectedTrade));
+    }
+
+    private void OnPropertyChanged(
+        [CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(
+                propertyName));
+    }
+}

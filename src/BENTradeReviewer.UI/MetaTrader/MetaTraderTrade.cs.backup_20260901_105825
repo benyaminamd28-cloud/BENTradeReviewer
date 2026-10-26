@@ -1,0 +1,68 @@
+using System.Text.Json.Serialization;
+
+namespace BENTradeReviewer.UI.MetaTrader;
+
+public sealed class MetaTraderTrade
+{
+    public string TradeId { get; set; } = string.Empty;
+
+    public string Symbol { get; set; } = string.Empty;
+
+    public string Side { get; set; } = string.Empty;
+
+    /*
+     * Canonical MT5 contract:
+     * this is the original position quantity.
+     */
+    public decimal Quantity { get; set; }
+
+    public DateTime EntryTime { get; set; }
+
+    public decimal EntryPrice { get; set; }
+
+    public decimal? StopLoss { get; set; }
+
+    /*
+     * Every closed quantity is represented explicitly.
+     *
+     * The final element in chronological order is the final exit.
+     * There is no reconstruction or inference from PnL.
+     */
+    public List<MetaTraderExit> Exits { get; set; } = new();
+
+    /*
+     * MT5 is the source of truth.
+     * Reviewer stores the PnL received from MT5.
+     */
+    public decimal PnL { get; set; }
+
+    [JsonIgnore]
+    public decimal ClosedQuantity =>
+        Exits.Sum(x => x.Quantity);
+
+    [JsonIgnore]
+    public decimal RemainingQuantity =>
+        Math.Max(
+            0m,
+            Quantity - ClosedQuantity);
+
+    [JsonIgnore]
+    public MetaTraderExit? FinalExit =>
+        Exits.Count == 0
+            ? null
+            : Exits
+                .OrderBy(x => x.Time)
+                .Last();
+
+    [JsonIgnore]
+    public DateTime? ExitTime =>
+        FinalExit?.Time;
+
+    [JsonIgnore]
+    public string Outcome =>
+        PnL > 0m
+            ? "WIN"
+            : PnL < 0m
+                ? "LOSS"
+                : "BREAK EVEN";
+}

@@ -1,0 +1,251 @@
+using System.IO;
+using System.Text.Json;
+
+namespace BENTradeReviewer.UI.MetaTrader;
+
+public sealed class MetaTraderImportResult
+{
+    public int FilesFound { get; set; }
+
+    public int Imported { get; set; }
+
+    public int Failed { get; set; }
+
+    public List<string> Errors { get; } = new();
+}
+
+public sealed class MetaTraderImporter
+{
+    private static readonly JsonSerializerOptions JsonOptions =
+        new()
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
+    private readonly MetaTraderRepository _repository;
+
+    public MetaTraderImporter(
+        MetaTraderRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public MetaTraderImportResult ImportFolder(
+        string folder)
+    {
+        var result =
+            new MetaTraderImportResult();
+
+        if (!Directory.Exists(folder))
+        {
+            result.Errors.Add(
+                $"Folder does not exist: {folder}");
+
+            result.Failed = 1;
+
+            return result;
+        }
+
+        var files =
+            Directory
+                .EnumerateFiles(
+                    folder,
+                    "*.json",
+                    SearchOption.TopDirectoryOnly)
+                .OrderBy(x => x)
+                .ToList();
+
+        result.FilesFound =
+            files.Count;
+
+        foreach (var file in files)
+        {
+            try
+            {
+                var json =
+                    File.ReadAllText(file);
+
+                var trade =
+                    JsonSerializer.Deserialize<MetaTraderTrade>(
+                        json,
+                        JsonOptions);
+
+                if (trade is null)
+                {
+                    throw new InvalidDataException(
+                        "JSON deserialized to null.");
+                }
+
+                NormalizeTrade(trade);
+
+                ValidateTrade(trade);
+
+                _repository.UpsertTrade(trade);
+
+                result.Imported++;
+            }
+            catch (Exception ex)
+            {
+                result.Failed++;
+
+                result.Errors.Add(
+                    $"{Path.GetFileName(file)}: {ex.Message}");
+            }
+        }
+
+        return result;
+    }
+
+    private static void NormalizeTrade(
+        MetaTraderTrade trade)
+    {
+        trade.Exits ??=
+            new List<MetaTraderExit>();
+
+        // --------------------------------------------------------
+        // MT5 is the source of truth.
+        //
+        // The JSON's explicit financial fields are retained.
+        // For compatibility with older JSON files:
+        // PnL -> GrossPnl when necessary.
+        // --------------------------------------------------------
+
+        if (trade.GrossPnl == 0m &&
+            trade.PnL != 0m)
+        {
+            trade.GrossPnl =
+                trade.PnL;
+        }
+
+        if (trade.PnL == 0m &&
+            trade.GrossPnl != 0m)
+        {
+            trade.PnL =
+                trade.GrossPnl;
+        }
+
+        // --------------------------------------------------------
+        // Net P&L
+        //
+        // MT5:
+        // Net = Gross + Commission + Swap + Fee
+        // --------------------------------------------------------
+
+        trade.NetPnl =
+            trade.GrossPnl
+            +
+            trade.Commission
+            +
+            trade.Swap
+            +
+            trade.Fee;
+
+        // --------------------------------------------------------
+        // Outcome MUST be based on NET P&L.
+        // --------------------------------------------------------
+
+        trade.Outcome =
+            trade.NetPnl > 0m
+                ? "WIN"
+                : trade.NetPnl < 0m
+                    ? "LOSS"
+                    : "BREAK EVEN";
+
+        // --------------------------------------------------------
+        // Exit numbering
+        // --------------------------------------------------------
+
+        trade.Exits =
+            trade.Exits
+                .OrderBy(x => x.Time)
+                .ToList();
+
+        for (var i = 0;
+             i < trade.Exits.Count;
+             i++)
+        {
+            trade.Exits[i].Number =
+                i + 1;
+        }
+
+        // --------------------------------------------------------
+        // PositionId compatibility
+        // --------------------------------------------------------
+
+        if (trade.PositionId == 0 &&
+            !string.IsNullOrWhiteSpace(
+                trade.TradeId))
+        {
+            var parts =
+                trade.TradeId.Split(
+                    '-',
+                    StringSplitOptions.RemoveEmptyEntries);
+
+            if (parts.Length > 0 &&
+                long.TryParse(
+                    parts[^1],
+                    out var parsed))
+            {
+                trade.PositionId =
+                    parsed;
+            }
+        }
+    }
+
+    private static void ValidateTrade(
+        MetaTraderTrade trade)
+    {
+        if (string.IsNullOrWhiteSpace(
+                trade.TradeId))
+        {
+            throw new InvalidDataException(
+                "TradeId is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(
+                trade.Symbol))
+        {
+            throw new InvalidDataException(
+                "Symbol is required.");
+        }
+
+        if (trade.Quantity <= 0m)
+        {
+            throw new InvalidDataException(
+                $"Invalid quantity: {trade.Quantity}");
+        }
+
+        if (trade.EntryPrice <= 0m)
+        {
+            throw new InvalidDataException(
+                $"Invalid entry price: {trade.EntryPrice}");
+        }
+
+        if (trade.Exits.Count == 0)
+        {
+            throw new InvalidDataException(
+                "No exit events found.");
+        }
+
+        foreach (var exit in trade.Exits)
+        {
+            if (exit.Quantity <= 0m)
+            {
+                throw new InvalidDataException(
+                    "Invalid exit quantity.");
+            }
+
+            if (exit.Price <= 0m)
+            {
+                throw new InvalidDataException(
+                    "Invalid exit price.");
+            }
+
+            if (exit.Time < trade.EntryTime)
+            {
+                throw new InvalidDataException(
+                    "Exit occurs before entry.");
+            }
+        }
+    }
+}

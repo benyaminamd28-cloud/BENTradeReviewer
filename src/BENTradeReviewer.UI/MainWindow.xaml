@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:BENTradeReviewer.UI.Controls"
         Title="{Binding WindowTitle}" Height="950" Width="1600" MinHeight="700" MinWidth="1100"
-        Background="{StaticResource BrushBackgroundDark}" WindowStartupLocation="CenterScreen">
+        Background="{StaticResource BrushBackgroundDark}" WindowStartupLocation="CenterScreen" Icon="pack://application:,,,/Assets/BENTradeReviewer.ico">
     <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="28"/></Grid.RowDefinitions>
 
@@ -14,6 +14,7 @@
                     <TextBlock Text=" TRADE REVIEWER" Foreground="{StaticResource BrushTextPrimary}" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,24,0"/>
                     <RadioButton Content="DASHBOARD &amp; CALENDAR" GroupName="Navigation" IsChecked="{Binding SelectedNavigationIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=0}" Style="{StaticResource NavigationTabStyle}"/>
                     <RadioButton Content="DAY REVIEW &amp; REPLAY" GroupName="Navigation" IsChecked="{Binding SelectedNavigationIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=1}" Style="{StaticResource NavigationTabStyle}" Margin="8,0,0,0"/>
+                    <RadioButton Content="TRADE ANALYSIS" GroupName="Navigation" IsChecked="{Binding SelectedNavigationIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=2}" Style="{StaticResource NavigationTabStyle}" Margin="8,0,0,0"/>
                     <RadioButton Content="SETTINGS" GroupName="Navigation" IsChecked="{Binding SelectedNavigationIndex, Converter={StaticResource IntToBoolConverter}, ConverterParameter=3}" Style="{StaticResource NavigationTabStyle}" Margin="8,0,0,0"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
@@ -25,6 +26,16 @@
         </Border>
 
         <Border Grid.Row="1" Background="{StaticResource BrushBackgroundDark}" Padding="15,10">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Visible"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedNavigationIndex}" Value="2">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
             <UniformGrid Columns="8">
                 <Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="NET P&amp;L" Foreground="{StaticResource BrushTextSecondary}" FontSize="10" FontWeight="Bold"/><TextBlock Text="{Binding Summary.NetPnL, StringFormat={}{0:C2}}" FontSize="18" FontWeight="Bold" Margin="0,4,0,0"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{StaticResource BrushGreenBright}"/><Style.Triggers><DataTrigger Binding="{Binding Summary.NetPnL, Converter={StaticResource IsNegativeConverter}}" Value="True"><Setter Property="Foreground" Value="{StaticResource BrushRedBright}"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></StackPanel></Border>
                 <Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="WIN RATE" Foreground="{StaticResource BrushTextSecondary}" FontSize="10" FontWeight="Bold"/><TextBlock Text="{Binding Summary.WinRate, StringFormat={}{0:F1}%}" Foreground="{StaticResource BrushTextPrimary}" FontSize="18" FontWeight="Bold" Margin="0,4,0,0"/></StackPanel></Border>
@@ -38,6 +49,481 @@
         </Border>
 
         <Grid Grid.Row="2" Margin="15,0,15,10" ClipToBounds="True">
+            <Grid Visibility="{Binding DataContext.SelectedNavigationIndex, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource IntToVisibilityConverter}, ConverterParameter=2}" DataContext="{Binding AnalysisVM}">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                <Grid.Resources>
+                    <!-- Scoped resources: these affect only Trade Analysis and do not restyle other application pages. -->
+                    <SolidColorBrush x:Key="AnalysisBackgroundBrush" Color="#05080D"/>
+                    <SolidColorBrush x:Key="AnalysisSurfaceBrush" Color="#0A111A"/>
+                    <SolidColorBrush x:Key="AnalysisSurfaceRaisedBrush" Color="#14212E"/>
+                    <SolidColorBrush x:Key="AnalysisBorderBrush" Color="#2D4658"/>
+                    <SolidColorBrush x:Key="AnalysisAccentBrush" Color="#D4AF37"/>
+                    <SolidColorBrush x:Key="AnalysisTextPrimaryBrush" Color="#F4F7FB"/>
+                    <SolidColorBrush x:Key="AnalysisTextSecondaryBrush" Color="#A6B5C5"/>
+                    <SolidColorBrush x:Key="AnalysisTextMutedBrush" Color="#687B8F"/>
+                    <SolidColorBrush x:Key="AnalysisPositiveBrush" Color="#00E6A2"/>
+                    <SolidColorBrush x:Key="AnalysisNegativeBrush" Color="#FF5875"/>
+                    <!-- Re-map existing report resources locally so existing report content uses the Design B palette. -->
+                    <SolidColorBrush x:Key="BrushBackgroundDark" Color="#05080D"/>
+                    <SolidColorBrush x:Key="BrushSurfaceDark" Color="#0A111A"/>
+                    <SolidColorBrush x:Key="BrushSurfaceLight" Color="#111B27"/>
+                    <SolidColorBrush x:Key="BrushBorder" Color="#2D4658"/>
+                    <SolidColorBrush x:Key="BrushAccentBlue" Color="#D4AF37"/>
+                    <SolidColorBrush x:Key="BrushTextPrimary" Color="#F4F7FB"/>
+                    <SolidColorBrush x:Key="BrushTextSecondary" Color="#A6B5C5"/>
+                    <SolidColorBrush x:Key="BrushTextMuted" Color="#687B8F"/>
+                    <SolidColorBrush x:Key="BrushGreenBright" Color="#00E6A2"/>
+                    <SolidColorBrush x:Key="BrushRedBright" Color="#FF5875"/>
+
+                    <Style x:Key="CardPanel" TargetType="Border">
+                        <Setter Property="Background" Value="{StaticResource AnalysisSurfaceBrush}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource AnalysisBorderBrush}"/>
+                        <Setter Property="BorderThickness" Value="1"/>
+                        <Setter Property="CornerRadius" Value="14"/>
+                        <Setter Property="Padding" Value="15"/>
+
+                        <Setter Property="Effect"><Setter.Value><DropShadowEffect Color="#000000" Opacity="0.20" BlurRadius="18" ShadowDepth="1" /></Setter.Value></Setter>
+                    </Style>
+                    <Style x:Key="TerminalButton" TargetType="Button">
+                        <Setter Property="Background" Value="#101721"/>
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextPrimaryBrush}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource AnalysisBorderBrush}"/>
+                        <Setter Property="BorderThickness" Value="1"/>
+                        <Setter Property="Padding" Value="12,7"/>
+                        <Setter Property="MinHeight" Value="28"/>
+                        <Setter Property="FontSize" Value="11"/>
+                        <Setter Property="FontWeight" Value="SemiBold"/>
+                        <Setter Property="Cursor" Value="Hand"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="ButtonRoot" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonRoot" Property="Background" Value="#292211"/><Setter TargetName="ButtonRoot" Property="BorderBrush" Value="{StaticResource AnalysisAccentBrush}"/></Trigger>
+                                        <Trigger Property="IsPressed" Value="True"><Setter TargetName="ButtonRoot" Property="Background" Value="#413416"/></Trigger>
+                                        <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ButtonRoot" Property="Opacity" Value="0.45"/></Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                    <Style x:Key="AnalysisFilterButtonStyle" TargetType="Button" BasedOn="{StaticResource TerminalButton}">
+                        <Setter Property="Margin" Value="0,0,6,6"/>
+                    </Style>
+                    <Style x:Key="AnalysisComboBoxItemStyle" TargetType="{x:Type ComboBoxItem}">
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextPrimaryBrush}"/>
+                        <Setter Property="Background" Value="#09111A"/>
+                        <Setter Property="Padding" Value="7,5"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="{x:Type ComboBoxItem}">
+                                    <Border x:Name="ItemBorder" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="#251F11"/><Setter TargetName="ItemBorder" Property="BorderBrush" Value="{StaticResource AnalysisAccentBrush}"/></Trigger>
+                                        <Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="#3A2D14"/><Setter Property="Foreground" Value="#FFFFFF"/></Trigger>
+                                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                    <Style x:Key="AnalysisComboBoxStyle" TargetType="{x:Type ComboBox}">
+                        <Setter Property="Background" Value="#101721"/>
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextPrimaryBrush}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource AnalysisBorderBrush}"/>
+                        <Setter Property="BorderThickness" Value="1"/>
+                        <Setter Property="Padding" Value="6,3"/>
+                        <Setter Property="MinHeight" Value="29"/>
+                        <Setter Property="ItemContainerStyle" Value="{StaticResource AnalysisComboBoxItemStyle}"/>
+                        <Setter Property="SnapsToDevicePixels" Value="True"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="{x:Type ComboBox}">
+                                    <Grid SnapsToDevicePixels="True">
+                                        <ToggleButton x:Name="DropDownToggle" Focusable="False" ClickMode="Press"
+                                                      IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                                      Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                                      BorderThickness="{TemplateBinding BorderThickness}">
+                                            <ToggleButton.Template>
+                                                <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                                    <Border x:Name="ToggleBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="22"/></Grid.ColumnDefinitions>
+                                                            <Path Grid.Column="1" Data="M 0 0 L 4 4 L 8 0 Z" Fill="{StaticResource AnalysisTextSecondaryBrush}"
+                                                                  HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        </Grid>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ToggleBorder" Property="BorderBrush" Value="{StaticResource AnalysisAccentBrush}"/></Trigger>
+                                                        <Trigger Property="IsPressed" Value="True"><Setter TargetName="ToggleBorder" Property="Background" Value="#3A2D14"/></Trigger>
+                                                        <Trigger Property="IsEnabled" Value="False"><Setter TargetName="ToggleBorder" Property="Opacity" Value="0.55"/></Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </ToggleButton.Template>
+                                        </ToggleButton>
+                                        <ContentPresenter IsHitTestVisible="False" Content="{TemplateBinding SelectionBoxItem}"
+                                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                          ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                                          Margin="8,0,24,0" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                                        <Popup x:Name="PART_Popup" Placement="Bottom" PlacementTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}"
+                                               IsOpen="{TemplateBinding IsDropDownOpen}" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                                            <Border Background="#09111A" BorderBrush="{StaticResource AnalysisBorderBrush}" BorderThickness="1"
+                                                    CornerRadius="4" MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                                    MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                                <ScrollViewer CanContentScroll="True" SnapsToDevicePixels="True" VerticalScrollBarVisibility="Auto">
+                                                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                                </ScrollViewer>
+                                            </Border>
+                                        </Popup>
+                                    </Grid>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.55"/></Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                    <Style x:Key="AnalysisCalendarDayButtonStyle" TargetType="{x:Type CalendarDayButton}">
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextPrimaryBrush}"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="BorderBrush" Value="Transparent"/>
+                        <Setter Property="MinWidth" Value="28"/>
+                        <Setter Property="MinHeight" Value="26"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#251F11"/><Setter Property="BorderBrush" Value="{StaticResource AnalysisAccentBrush}"/></Trigger>
+                            <Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#6A541D"/><Setter Property="Foreground" Value="#FFFFFF"/></Trigger>
+                            <Trigger Property="IsInactive" Value="True"><Setter Property="Foreground" Value="#687B8F"/></Trigger>
+                        </Style.Triggers>
+                    </Style>
+                    <Style x:Key="AnalysisCalendarButtonStyle" TargetType="{x:Type CalendarButton}">
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextPrimaryBrush}"/>
+                        <Setter Property="Background" Value="#101721"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource AnalysisBorderBrush}"/>
+                    </Style>
+                    <Style x:Key="AnalysisCalendarStyle" TargetType="{x:Type Calendar}">
+                        <Setter Property="Background" Value="#09111A"/>
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextPrimaryBrush}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource AnalysisBorderBrush}"/>
+                        <Setter Property="CalendarDayButtonStyle" Value="{StaticResource AnalysisCalendarDayButtonStyle}"/>
+                        <Setter Property="CalendarButtonStyle" Value="{StaticResource AnalysisCalendarButtonStyle}"/>
+                    </Style>
+                    <Style TargetType="{x:Type DatePickerTextBox}">
+                        <Setter Property="Background" Value="#101721"/>
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextPrimaryBrush}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource AnalysisBorderBrush}"/>
+                        <Setter Property="Padding" Value="5,2"/>
+                        <Setter Property="CaretBrush" Value="{StaticResource AnalysisTextPrimaryBrush}"/>
+                    </Style>
+                    <Style x:Key="AnalysisDatePickerStyle" TargetType="{x:Type DatePicker}">
+                        <Setter Property="Background" Value="#101721"/>
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextPrimaryBrush}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource AnalysisBorderBrush}"/>
+                        <Setter Property="MinHeight" Value="29"/>
+                        <Setter Property="CalendarStyle" Value="{StaticResource AnalysisCalendarStyle}"/>
+                    </Style>
+                    <Style TargetType="DataGrid">
+                        <Setter Property="Background" Value="#080E15"/>
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextPrimaryBrush}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource AnalysisBorderBrush}"/>
+                        <Setter Property="RowBackground" Value="#09111A"/>
+                        <Setter Property="AlternatingRowBackground" Value="#101923"/>
+                        <Setter Property="AlternationCount" Value="2"/>
+                        <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+                        <Setter Property="HorizontalGridLinesBrush" Value="#1A2B38"/>
+                        <Setter Property="VerticalGridLinesBrush" Value="#1A2937"/>
+                        <Setter Property="HeadersVisibility" Value="Column"/>
+                        <Setter Property="CanUserResizeRows" Value="False"/>
+                        <Setter Property="RowHeaderWidth" Value="0"/>
+                    </Style>
+                    <Style TargetType="DataGridColumnHeader">
+                        <Setter Property="Background" Value="#111B27"/>
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextSecondaryBrush}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource AnalysisBorderBrush}"/>
+                        <Setter Property="Padding" Value="8,7"/>
+                        <Setter Property="FontWeight" Value="SemiBold"/>
+                        <Setter Property="FontSize" Value="10"/>
+                    </Style>
+                    <Style x:Key="AnalysisReportTabItemStyle" TargetType="TabItem">
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextSecondaryBrush}"/>
+                        <Setter Property="Background" Value="Transparent"/>
+                        <Setter Property="Padding" Value="10,9"/>
+                        <Setter Property="Margin" Value="0,0,0,4"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="TabItem">
+                                    <Border x:Name="TabRoot" Background="{TemplateBinding Background}" BorderBrush="Transparent" BorderThickness="0" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter ContentSource="Header" HorizontalAlignment="Stretch" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="TabRoot" Property="Background" Value="#201D14"/></Trigger>
+                                        <Trigger Property="IsSelected" Value="True"><Setter TargetName="TabRoot" Property="Background" Value="#251F11"/><Setter TargetName="TabRoot" Property="BorderBrush" Value="{StaticResource AnalysisAccentBrush}"/><Setter TargetName="TabRoot" Property="BorderThickness" Value="3,0,0,0"/><Setter Property="Foreground" Value="{StaticResource AnalysisTextPrimaryBrush}"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger>
+                                        <Trigger Property="IsEnabled" Value="False"><Setter TargetName="TabRoot" Property="Opacity" Value="0.45"/></Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                    <Style x:Key="AnalysisWorkspaceTabControlStyle" TargetType="TabControl">
+                        <Setter Property="Background" Value="{StaticResource AnalysisSurfaceBrush}"/>
+                        <Setter Property="Foreground" Value="{StaticResource AnalysisTextPrimaryBrush}"/>
+                        <Setter Property="BorderThickness" Value="0"/>
+                        <Setter Property="ItemContainerStyle" Value="{StaticResource AnalysisReportTabItemStyle}"/>
+                        <Setter Property="ItemsPanel">
+                            <Setter.Value><ItemsPanelTemplate><StackPanel Orientation="Vertical"/></ItemsPanelTemplate></Setter.Value>
+                        </Setter>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="TabControl">
+                                    <Grid SnapsToDevicePixels="True" ClipToBounds="True">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="212"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Background="#070C12" BorderBrush="{StaticResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="7">
+                                            <Grid>
+                                                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                                                <StackPanel Grid.Row="0" Margin="8,6,8,10">
+                                                    <TextBlock Text="REPORTS" Foreground="{StaticResource AnalysisTextPrimaryBrush}" FontSize="10" FontWeight="Bold"/>
+                                                    <TextBlock Text="11 ANALYSIS MODULES" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                                                    <ItemsPresenter/>
+                                                </ScrollViewer>
+                                            </Grid>
+                                        </Border>
+                                        <Border Grid.Column="2" Background="{StaticResource AnalysisSurfaceBrush}" BorderBrush="{StaticResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="8">
+                                            <ContentPresenter x:Name="PART_SelectedContentHost" ContentSource="SelectedContent" SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                                        </Border>
+                                    </Grid>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </Grid.Resources>
+
+                <Border Grid.Row="0" Background="{StaticResource AnalysisSurfaceBrush}" BorderBrush="{StaticResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="9" Padding="14" Margin="0,0,0,8">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border Background="#1C2D40" BorderBrush="#6A541D" BorderThickness="1" CornerRadius="4" Padding="7,4" Margin="0,0,10,0">
+                                        <TextBlock Text="BEN / ANALYTICS" Foreground="{StaticResource AnalysisAccentBrush}" FontSize="9" FontWeight="Bold"/>
+                                    </Border>
+                                    <TextBlock Text="PERFORMANCE INTELLIGENCE" Foreground="{StaticResource AnalysisTextPrimaryBrush}" FontSize="18" FontWeight="Bold" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock Text="Evidence-led review across performance, execution, risk and data quality." Foreground="{StaticResource AnalysisTextSecondaryBrush}" FontSize="11" Margin="0,6,0,0"/>
+                            </StackPanel>
+                            <Border Grid.Column="1" Background="#0E151D" BorderBrush="{StaticResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="7" Padding="12,8" Margin="14,0,0,0" MinWidth="210">
+                                <StackPanel>
+                                    <TextBlock Text="ACTIVE DATE SCOPE" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" FontWeight="Bold"/>
+                                    <TextBlock Text="{Binding ScopeDescription}" Foreground="{StaticResource AnalysisAccentBrush}" FontSize="12" FontWeight="SemiBold" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                        <Border Height="1" Background="{StaticResource AnalysisBorderBrush}" Margin="0,12,0,10"/>
+                        <DockPanel LastChildFill="False" Margin="0,0,0,5">
+                            <TextBlock Text="QUICK DATE RANGE" Foreground="{StaticResource AnalysisTextPrimaryBrush}" FontSize="10" FontWeight="Bold" DockPanel.Dock="Left"/>
+                            <TextBlock Text="Entry-date scope · applies to every report" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="10" DockPanel.Dock="Right"/>
+                        </DockPanel>
+                        <WrapPanel>
+                            <Button Content="LAST 7 DAYS" Command="{Binding SelectPresetCommand}" CommandParameter="LAST_7_DAYS" Style="{StaticResource AnalysisFilterButtonStyle}"/>
+                            <Button Content="LAST 14 DAYS" Command="{Binding SelectPresetCommand}" CommandParameter="LAST_14_DAYS" Style="{StaticResource AnalysisFilterButtonStyle}"/>
+                            <Button Content="LAST 30 DAYS" Command="{Binding SelectPresetCommand}" CommandParameter="LAST_30_DAYS" Style="{StaticResource AnalysisFilterButtonStyle}"/>
+                            <Button Content="THIS MONTH" Command="{Binding SelectPresetCommand}" CommandParameter="THIS_MONTH" Style="{StaticResource AnalysisFilterButtonStyle}"/>
+                            <Button Content="PREVIOUS MONTH" Command="{Binding SelectPresetCommand}" CommandParameter="PREVIOUS_MONTH" Style="{StaticResource AnalysisFilterButtonStyle}"/>
+                            <Button Content="2 MONTHS AGO" Command="{Binding SelectPresetCommand}" CommandParameter="TWO_MONTHS_AGO" Style="{StaticResource AnalysisFilterButtonStyle}"/>
+                            <Button Content="ALL HISTORY" Command="{Binding SelectPresetCommand}" CommandParameter="ALL_HISTORY" Style="{StaticResource AnalysisFilterButtonStyle}"/>
+                        </WrapPanel>
+                        <Grid Margin="0,5,0,0">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="1.05*"/><ColumnDefinition Width="1.35*"/></Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Background="#070C12" BorderBrush="{StaticResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="7" Padding="10,8" Margin="0,0,8,0">
+                                <StackPanel>
+                                    <TextBlock Text="CUSTOM DATE RANGE" Foreground="{StaticResource AnalysisTextSecondaryBrush}" FontSize="9" FontWeight="Bold" Margin="0,0,0,6"/>
+                                    <WrapPanel VerticalAlignment="Center">
+                                        <TextBlock Text="FROM" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" VerticalAlignment="Center" Margin="0,0,5,5"/>
+                                        <DatePicker Style="{StaticResource AnalysisDatePickerStyle}" SelectedDate="{Binding FromDate, UpdateSourceTrigger=PropertyChanged}" Width="118" Margin="0,0,10,5"/>
+                                        <TextBlock Text="TO" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" VerticalAlignment="Center" Margin="0,0,5,5"/>
+                                        <DatePicker Style="{StaticResource AnalysisDatePickerStyle}" SelectedDate="{Binding ToDate, UpdateSourceTrigger=PropertyChanged}" Width="118" Margin="0,0,8,5"/>
+                                        <Button Content="APPLY RANGE" Command="{Binding ApplyCustomRangeCommand}" Style="{StaticResource AnalysisFilterButtonStyle}" Margin="0,0,6,5"/>
+                                        <Button Content="RESET" Command="{Binding ResetRangeCommand}" Style="{StaticResource AnalysisFilterButtonStyle}" Margin="0,0,0,5"/>
+                                    </WrapPanel>
+                                    <TextBlock Text="{Binding ValidationMessage}" Foreground="{StaticResource AnalysisNegativeBrush}" FontSize="10" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="1" Background="#070C12" BorderBrush="{StaticResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="7" Padding="10,8">
+                                <StackPanel>
+                                    <TextBlock Text="GLOBAL TRADE FILTERS" Foreground="{StaticResource AnalysisTextSecondaryBrush}" FontSize="9" FontWeight="Bold" Margin="0,0,0,6"/>
+                                    <WrapPanel VerticalAlignment="Center">
+                                        <TextBlock Text="SYMBOL" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" VerticalAlignment="Center" Margin="0,0,5,5"/>
+                                        <ComboBox Style="{StaticResource AnalysisComboBoxStyle}" Width="86" SelectedValuePath="Content" SelectedValue="{Binding DataContext.SelectedInstrumentFilter, RelativeSource={RelativeSource AncestorType=Window}}" TextElement.Foreground="{StaticResource AnalysisTextPrimaryBrush}" Margin="0,0,12,5"><ComboBoxItem Content="ALL"/><ComboBoxItem Content="ES"/><ComboBoxItem Content="MES"/><ComboBoxItem Content="NQ"/><ComboBoxItem Content="MNQ"/><ComboBoxItem Content="6E"/><ComboBoxItem Content="GC"/><ComboBoxItem Content="CL"/><ComboBoxItem Content="RTY"/><ComboBoxItem Content="ZB"/></ComboBox>
+                                        <TextBlock Text="SIDE" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" VerticalAlignment="Center" Margin="0,0,5,5"/>
+                                        <ComboBox Style="{StaticResource AnalysisComboBoxStyle}" Width="82" SelectedValuePath="Content" SelectedValue="{Binding DataContext.SelectedSideFilter, RelativeSource={RelativeSource AncestorType=Window}}" TextElement.Foreground="{StaticResource AnalysisTextPrimaryBrush}" Margin="0,0,12,5"><ComboBoxItem Content="ALL"/><ComboBoxItem Content="Long"/><ComboBoxItem Content="Short"/></ComboBox>
+                                        <TextBlock Text="OUTCOME" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" VerticalAlignment="Center" Margin="0,0,5,5"/>
+                                        <ComboBox Style="{StaticResource AnalysisComboBoxStyle}" Width="92" SelectedValuePath="Content" SelectedValue="{Binding DataContext.SelectedOutcomeFilter, RelativeSource={RelativeSource AncestorType=Window}}" TextElement.Foreground="{StaticResource AnalysisTextPrimaryBrush}" Margin="0,0,0,5"><ComboBoxItem Content="ALL"/><ComboBoxItem Content="WIN"/><ComboBoxItem Content="LOSS"/></ComboBox>
+                                    </WrapPanel>
+                                    <TextBlock Text="Text search remains in the global search field in the application header." Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Row="1" Background="#080E15" BorderBrush="{StaticResource AnalysisBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="10,7" Margin="0,0,0,8">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Left" Background="#1C2D40" CornerRadius="3" Padding="6,3" Margin="0,0,9,0">
+                            <TextBlock Text="SCOPE STATUS" Foreground="{StaticResource AnalysisAccentBrush}" FontSize="9" FontWeight="Bold"/>
+                        </Border>
+                        <TextBlock DockPanel.Dock="Right" Text="FILTERED BY ENTRY DATE" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                        <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource AnalysisTextSecondaryBrush}" FontSize="10" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    </DockPanel>
+                </Border>
+                <TabControl Grid.Row="2" Style="{StaticResource AnalysisWorkspaceTabControlStyle}">
+
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel>
+                                <TextBlock Text="PERFORMANCE" Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type TabItem}}, Path=Foreground}" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="PnL, expectancy &amp; equity" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </TabItem.Header>
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="6">
+                            <UniformGrid Columns="6" Margin="0,0,0,8">
+                                <Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="NET P&amp;L" Foreground="{StaticResource BrushTextSecondary}" FontSize="10"/><TextBlock Text="{Binding Summary.NetPnL, StringFormat={}{0:C2}}" Foreground="{StaticResource BrushGreenBright}" FontSize="18" FontWeight="Bold"/></StackPanel></Border>
+                                <Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="EXPECTANCY / TRADE" Foreground="{StaticResource BrushTextSecondary}" FontSize="10"/><TextBlock Text="{Binding Summary.Expectancy, StringFormat={}{0:C2}}" Foreground="{StaticResource BrushAccentBlue}" FontSize="18" FontWeight="Bold"/></StackPanel></Border>
+                                <Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="WIN RATE" Foreground="{StaticResource BrushTextSecondary}" FontSize="10"/><TextBlock Text="{Binding Summary.WinRate, StringFormat={}{0:F1}%}" Foreground="{StaticResource BrushTextPrimary}" FontSize="18" FontWeight="Bold"/></StackPanel></Border>
+                                <Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="PROFIT FACTOR" Foreground="{StaticResource BrushTextSecondary}" FontSize="10"/><TextBlock Text="{Binding Summary.ProfitFactor, StringFormat={}{0:F2}}" Foreground="{StaticResource BrushAccentBlue}" FontSize="18" FontWeight="Bold"/></StackPanel></Border>
+                                <Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="MAX DRAWDOWN" Foreground="{StaticResource BrushTextSecondary}" FontSize="10"/><TextBlock Text="{Binding Summary.MaxDrawdown, StringFormat={}{0:C2}}" Foreground="{StaticResource BrushRedBright}" FontSize="18" FontWeight="Bold"/></StackPanel></Border>
+                                <Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="TRADES" Foreground="{StaticResource BrushTextSecondary}" FontSize="10"/><TextBlock Text="{Binding Summary.TotalTrades}" Foreground="{StaticResource BrushTextPrimary}" FontSize="18" FontWeight="Bold"/></StackPanel></Border>
+                            </UniformGrid>
+                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <controls:TradeAnalysisChart Grid.Column="0" Height="245" Margin="3" ChartTitle="Daily net P&amp;L" Points="{Binding DailyPnlChart}" ChartType="Bar"/>
+                                <controls:TradeAnalysisChart Grid.Column="1" Height="245" Margin="3" ChartTitle="Cumulative equity (trade P&amp;L only)" Points="{Binding EquityCurveChart}" ChartType="Line"/>
+                            </Grid>
+                            <DataGrid ItemsSource="{Binding TradeRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Margin="3,8,3,3" MaxHeight="260" Background="{StaticResource BrushSurfaceDark}" Foreground="{StaticResource BrushTextPrimary}" BorderBrush="{StaticResource BrushBorder}">
+                                <DataGrid.Columns><DataGridTextColumn Header="Entry" Binding="{Binding EntryTime, StringFormat={}{0:yyyy-MM-dd HH:mm}}"/><DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}"/><DataGridTextColumn Header="Side" Binding="{Binding Side}"/><DataGridTextColumn Header="Qty" Binding="{Binding Quantity}"/><DataGridTextColumn Header="Net P&amp;L" Binding="{Binding NetPnL, StringFormat={}{0:C2}}"/><DataGridTextColumn Header="R:R" Binding="{Binding RealizedRR, StringFormat={}{0:F2}}"/><DataGridTextColumn Header="Tags" Binding="{Binding Tags}" Width="*"/></DataGrid.Columns>
+                            </DataGrid>
+                        </StackPanel></ScrollViewer>
+                    </TabItem>
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel>
+                                <TextBlock Text="SETUP EDGE" Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type TabItem}}, Path=Foreground}" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="Setup-level results" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </TabItem.Header><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                        <TextBlock Text="Win rate is grouped by checked SETUP checklist items. Each checked setup gets its own result bar and row; trades with no checked setup appear in a separate No setup group. A trade with multiple checked setups contributes to each selected setup." Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap" Margin="3,3,3,8"/>
+                        <controls:TradeAnalysisChart Height="240" Margin="3" ChartTitle="Net P&amp;L by explicit setup" Points="{Binding SetupPnlChart}" ChartType="Bar"/>
+                        <DataGrid ItemsSource="{Binding SetupRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Margin="3,8,3,3" Background="{StaticResource BrushSurfaceDark}" Foreground="{StaticResource BrushTextPrimary}" BorderBrush="{StaticResource BrushBorder}"><DataGrid.Columns><DataGridTextColumn Header="Setup" Binding="{Binding Label}" Width="2*"/><DataGridTextColumn Header="Trades" Binding="{Binding Trades}"/><DataGridTextColumn Header="Win %" Binding="{Binding WinRate, StringFormat={}{0:F1}%}"/><DataGridTextColumn Header="Net P&amp;L" Binding="{Binding NetPnL, StringFormat={}{0:C2}}"/><DataGridTextColumn Header="Expectancy" Binding="{Binding Expectancy, StringFormat={}{0:C2}}"/><DataGridTextColumn Header="PF" Binding="{Binding ProfitFactor, StringFormat={}{0:F2}}"/><DataGridTextColumn Header="Sample" Binding="{Binding SampleQuality}"/></DataGrid.Columns></DataGrid>
+                    </StackPanel></ScrollViewer></TabItem>
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel>
+                                <TextBlock Text="SESSION &amp; TIME" Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type TabItem}}, Path=Foreground}" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="When performance changes" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </TabItem.Header><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                        <TextBlock Text="Time buckets use the timestamp stored on each trade; no exchange-timezone conversion or market-regime classification is assumed." Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap" Margin="3,3,3,8"/>
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:TradeAnalysisChart Grid.Column="0" Height="240" Margin="3" ChartTitle="Net P&amp;L by weekday" Points="{Binding WeekdayPnlChart}" ChartType="Bar"/><controls:TradeAnalysisChart Grid.Column="1" Height="240" Margin="3" ChartTitle="Net P&amp;L by stored entry-hour bucket" Points="{Binding HourPnlChart}" ChartType="Bar"/></Grid>
+                        <controls:TradeAnalysisChart Height="210" Margin="3,8,3,3" ChartTitle="Net P&amp;L by recorded RTH/ETH session context (if available)" Points="{Binding SessionContextPnlChart}" ChartType="Bar"/>
+                        <TextBlock Text="Weekday breakdown" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" Margin="3,10,3,4"/><DataGrid ItemsSource="{Binding WeekdayRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" MaxHeight="200" Background="{StaticResource BrushSurfaceDark}" Foreground="{StaticResource BrushTextPrimary}" BorderBrush="{StaticResource BrushBorder}"><DataGrid.Columns><DataGridTextColumn Header="Weekday" Binding="{Binding Label}"/><DataGridTextColumn Header="Trades" Binding="{Binding Trades}"/><DataGridTextColumn Header="Win %" Binding="{Binding WinRate, StringFormat={}{0:F1}%}"/><DataGridTextColumn Header="Net P&amp;L" Binding="{Binding NetPnL, StringFormat={}{0:C2}}"/><DataGridTextColumn Header="Expectancy" Binding="{Binding Expectancy, StringFormat={}{0:C2}}"/><DataGridTextColumn Header="Sample" Binding="{Binding SampleQuality}"/></DataGrid.Columns></DataGrid>
+                    </StackPanel></ScrollViewer></TabItem>
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel>
+                                <TextBlock Text="CONTEXT &amp; TAGS" Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type TabItem}}, Path=Foreground}" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="Tags and recorded context" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </TabItem.Header><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                        <Border Style="{StaticResource CardPanel}" Padding="10" Margin="3"><TextBlock Text="{Binding ContextCoverageText}" Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap"/></Border>
+                        <controls:TradeAnalysisChart Height="240" Margin="3" ChartTitle="Net P&amp;L association by recorded tag" Points="{Binding TagPnlChart}" ChartType="Bar"/>
+                        <DataGrid ItemsSource="{Binding ContextRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Margin="3,8,3,3" Background="{StaticResource BrushSurfaceDark}" Foreground="{StaticResource BrushTextPrimary}" BorderBrush="{StaticResource BrushBorder}"><DataGrid.Columns><DataGridTextColumn Header="Context feature / tag" Binding="{Binding Label}" Width="2*"/><DataGridTextColumn Header="Trades carrying tag" Binding="{Binding Trades}"/><DataGridTextColumn Header="Win %" Binding="{Binding WinRate, StringFormat={}{0:F1}%}"/><DataGridTextColumn Header="Net P&amp;L" Binding="{Binding NetPnL, StringFormat={}{0:C2}}"/><DataGridTextColumn Header="Expectancy" Binding="{Binding Expectancy, StringFormat={}{0:C2}}"/><DataGridTextColumn Header="Sample" Binding="{Binding SampleQuality}"/></DataGrid.Columns></DataGrid>
+                    </StackPanel></ScrollViewer></TabItem>
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel>
+                                <TextBlock Text="MICROSTRUCTURE" Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type TabItem}}, Path=Foreground}" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="Recorded trade events" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </TabItem.Header><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                        <Border Style="{StaticResource CardPanel}" Padding="12" Margin="3"><StackPanel><TextBlock Text="DATA COVERAGE / NO INFERRED L2" Foreground="{StaticResource BrushAccentBlue}" FontWeight="Bold" Margin="0,0,0,6"/><TextBlock Text="{Binding MicrostructureCoverageText}" Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap"/></StackPanel></Border>
+                        <controls:TradeAnalysisChart Height="250" Margin="3" ChartTitle="Saved trade-timeline events by event type (not raw order flow)" Points="{Binding EventTypeChart}" ChartType="Bar"/>
+                        <DataGrid ItemsSource="{Binding EventRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Margin="3,8,3,3" Background="{StaticResource BrushSurfaceDark}" Foreground="{StaticResource BrushTextPrimary}" BorderBrush="{StaticResource BrushBorder}"><DataGrid.Columns><DataGridTextColumn Header="Event type" Binding="{Binding Label}" Width="2*"/><DataGridTextColumn Header="Event records" Binding="{Binding Trades}"/><DataGridTextColumn Header="Interpretation" Binding="{Binding SampleQuality}" Width="2*"/></DataGrid.Columns></DataGrid>
+                    </StackPanel></ScrollViewer></TabItem>
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel>
+                                <TextBlock Text="EXECUTION QUALITY" Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type TabItem}}, Path=Foreground}" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="Costs and execution fields" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </TabItem.Header><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                        <Border Style="{StaticResource CardPanel}" Padding="12" Margin="3"><StackPanel><TextBlock Text="EXECUTION AUDIT" Foreground="{StaticResource BrushAccentBlue}" FontWeight="Bold" Margin="0,0,0,6"/><TextBlock Text="{Binding ExecutionCoverageText}" Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap"/></StackPanel></Border>
+                        <UniformGrid Columns="3" Margin="0,0,0,8"><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="RECORDED COMMISSIONS" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.RecordedCommissions, StringFormat={}{0:C2}}" Foreground="{StaticResource BrushTextPrimary}" FontSize="18" FontWeight="Bold"/></StackPanel></Border><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="AVERAGE DURATION" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.AverageDuration, StringFormat={}{0:hh\:mm\:ss}}" Foreground="{StaticResource BrushTextPrimary}" FontSize="18" FontWeight="Bold"/></StackPanel></Border><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="TOTAL TRADES" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.TotalTrades}" Foreground="{StaticResource BrushTextPrimary}" FontSize="18" FontWeight="Bold"/></StackPanel></Border></UniformGrid>
+                        <controls:TradeAnalysisChart Height="240" Margin="3" ChartTitle="Recorded commissions by entry date" Points="{Binding CommissionChart}" ChartType="Bar"/>
+                    </StackPanel></ScrollViewer></TabItem>
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel>
+                                <TextBlock Text="TRADE PATH" Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type TabItem}}, Path=Foreground}" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="MFE, MAE and excursions" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </TabItem.Header><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                        <TextBlock Text="MFE/MAE only include trades with a recorded excursion value. MAE is displayed as an absolute magnitude; missing values remain excluded." Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap" Margin="3,3,3,8"/>
+                        <UniformGrid Columns="2" Margin="0,0,0,8"><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="AVERAGE MFE (TICKS)" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.AverageMfeTicks, StringFormat={}{0:F1}}" Foreground="{StaticResource BrushGreenBright}" FontSize="18" FontWeight="Bold"/></StackPanel></Border><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="AVERAGE MAE (TICKS)" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.AverageMaeTicks, StringFormat={}{0:F1}}" Foreground="{StaticResource BrushRedBright}" FontSize="18" FontWeight="Bold"/></StackPanel></Border></UniformGrid>
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:TradeAnalysisChart Grid.Column="0" Height="245" Margin="3" ChartTitle="Average recorded MFE by entry date" Points="{Binding MfeChart}" ChartType="Line"/><controls:TradeAnalysisChart Grid.Column="1" Height="245" Margin="3" ChartTitle="Average absolute recorded MAE by entry date" Points="{Binding MaeChart}" ChartType="Line"/></Grid>
+                    </StackPanel></ScrollViewer></TabItem>
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel>
+                                <TextBlock Text="RISK" Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type TabItem}}, Path=Foreground}" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="Drawdown and distribution" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </TabItem.Header><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                        <TextBlock Text="Drawdown is calculated from cumulative net P&amp;L in the selected scope, starting at zero; it is not account-level equity or margin risk." Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap" Margin="3,3,3,8"/>
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><controls:TradeAnalysisChart Grid.Column="0" Height="250" Margin="3" ChartTitle="Drawdown from selected-scope equity peak" Points="{Binding DrawdownChart}" ChartType="Line"/><controls:TradeAnalysisChart Grid.Column="1" Height="250" Margin="3" ChartTitle="Daily net P&amp;L distribution over time" Points="{Binding DailyPnlChart}" ChartType="Bar"/></Grid>
+                        <UniformGrid Columns="4" Margin="0,8,0,0"><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="BEST TRADE" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.BestTrade, StringFormat={}{0:C2}}" Foreground="{StaticResource BrushGreenBright}" FontSize="16" FontWeight="Bold"/></StackPanel></Border><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="WORST TRADE" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.WorstTrade, StringFormat={}{0:C2}}" Foreground="{StaticResource BrushRedBright}" FontSize="16" FontWeight="Bold"/></StackPanel></Border><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="MAX DRAWDOWN" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.MaxDrawdown, StringFormat={}{0:C2}}" Foreground="{StaticResource BrushRedBright}" FontSize="16" FontWeight="Bold"/></StackPanel></Border><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="BREAK-EVEN" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.BreakEven}" Foreground="{StaticResource BrushTextPrimary}" FontSize="16" FontWeight="Bold"/></StackPanel></Border></UniformGrid>
+                    </StackPanel></ScrollViewer></TabItem>
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel>
+                                <TextBlock Text="MISTAKES" Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type TabItem}}, Path=Foreground}" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="Explicit error tags" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </TabItem.Header><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                        <Border Style="{StaticResource CardPanel}" Padding="12" Margin="3"><TextBlock Text="{Binding MistakeCoverageText}" Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap"/></Border>
+                        <controls:TradeAnalysisChart Height="240" Margin="3" ChartTitle="Net P&amp;L by explicit mistake tag" Points="{Binding MistakePnlChart}" ChartType="Bar"/>
+                        <DataGrid ItemsSource="{Binding MistakeRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Margin="3,8,3,3" Background="{StaticResource BrushSurfaceDark}" Foreground="{StaticResource BrushTextPrimary}" BorderBrush="{StaticResource BrushBorder}"><DataGrid.Columns><DataGridTextColumn Header="Mistake tag" Binding="{Binding Label}" Width="2*"/><DataGridTextColumn Header="Trades tagged" Binding="{Binding Trades}"/><DataGridTextColumn Header="Win %" Binding="{Binding WinRate, StringFormat={}{0:F1}%}"/><DataGridTextColumn Header="Net P&amp;L" Binding="{Binding NetPnL, StringFormat={}{0:C2}}"/><DataGridTextColumn Header="Sample" Binding="{Binding SampleQuality}"/></DataGrid.Columns></DataGrid>
+                    </StackPanel></ScrollViewer></TabItem>
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel>
+                                <TextBlock Text="RESEARCH" Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type TabItem}}, Path=Foreground}" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="Chronological validation" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </TabItem.Header><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                        <Border Style="{StaticResource CardPanel}" Padding="12" Margin="3"><StackPanel><TextBlock Text="VALIDATION DISCIPLINE" Foreground="{StaticResource BrushAccentBlue}" FontWeight="Bold" Margin="0,0,0,6"/><TextBlock Text="{Binding ResearchCoverageText}" Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap"/></StackPanel></Border>
+                        <controls:TradeAnalysisChart Height="245" Margin="3" ChartTitle="Rolling average net P&amp;L per 10 trades (diagnostic only)" Points="{Binding RollingExpectancyChart}" ChartType="Line"/>
+                        <DataGrid ItemsSource="{Binding ValidationRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" Margin="3,8,3,3" Background="{StaticResource BrushSurfaceDark}" Foreground="{StaticResource BrushTextPrimary}" BorderBrush="{StaticResource BrushBorder}"><DataGrid.Columns><DataGridTextColumn Header="Chronological segment" Binding="{Binding Label}" Width="2*"/><DataGridTextColumn Header="Trades" Binding="{Binding Trades}"/><DataGridTextColumn Header="Win %" Binding="{Binding WinRate, StringFormat={}{0:F1}%}"/><DataGridTextColumn Header="Net P&amp;L" Binding="{Binding NetPnL, StringFormat={}{0:C2}}"/><DataGridTextColumn Header="Expectancy" Binding="{Binding Expectancy, StringFormat={}{0:C2}}"/><DataGridTextColumn Header="PF" Binding="{Binding ProfitFactor, StringFormat={}{0:F2}}"/><DataGridTextColumn Header="Sample" Binding="{Binding SampleQuality}"/></DataGrid.Columns></DataGrid>
+                    </StackPanel></ScrollViewer></TabItem>
+                    <TabItem>
+                        <TabItem.Header>
+                            <StackPanel>
+                                <TextBlock Text="DATA QUALITY" Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type TabItem}}, Path=Foreground}" FontSize="10" FontWeight="Bold"/>
+                                <TextBlock Text="Coverage and limitations" Foreground="{StaticResource AnalysisTextMutedBrush}" FontSize="9" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </TabItem.Header><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="8">
+                        <Border Style="{StaticResource CardPanel}" Padding="12" Margin="3"><StackPanel><TextBlock Text="FIELD COVERAGE AUDIT" Foreground="{StaticResource BrushAccentBlue}" FontWeight="Bold" Margin="0,0,0,6"/><TextBlock Text="{Binding DataCoverageText}" Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap"/></StackPanel></Border>
+                        <UniformGrid Columns="5" Margin="0,0,0,8"><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="WITH TAGS" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.TradesWithTags}" FontSize="17" FontWeight="Bold"/></StackPanel></Border><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="WITH NOTES" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.TradesWithNotes}" FontSize="17" FontWeight="Bold"/></StackPanel></Border><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="WITH R:R" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.TradesWithR}" FontSize="17" FontWeight="Bold"/></StackPanel></Border><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="WITH MFE" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.TradesWithMfe}" FontSize="17" FontWeight="Bold"/></StackPanel></Border><Border Style="{StaticResource CardPanel}" Margin="3"><StackPanel><TextBlock Text="WITH MAE" Foreground="{StaticResource BrushTextSecondary}"/><TextBlock Text="{Binding Summary.TradesWithMae}" FontSize="17" FontWeight="Bold"/></StackPanel></Border></UniformGrid>
+                        <TextBlock Text="Scope and source limitations" Foreground="{StaticResource BrushTextPrimary}" FontWeight="Bold" Margin="3,8,3,4"/><TextBlock Text="{Binding ContextCoverageText}" Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap" Margin="3,3,3,8"/><TextBlock Text="{Binding ExecutionCoverageText}" Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap" Margin="3,3,3,8"/><TextBlock Text="{Binding MicrostructureCoverageText}" Foreground="{StaticResource BrushTextSecondary}" TextWrapping="Wrap" Margin="3,3,3,8"/>
+                    </StackPanel></ScrollViewer></TabItem>
+                </TabControl>
+            </Grid>
+
             <Grid Visibility="{Binding DataContext.SelectedNavigationIndex, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource IntToVisibilityConverter}, ConverterParameter=0}">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                 <DockPanel Grid.Row="0" Margin="0,0,0,8">
@@ -48,11 +534,11 @@
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
                         <TextBlock Text="Instrument:" Foreground="{StaticResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                        <ComboBox Width="85" SelectedValuePath="Content" SelectedValue="{Binding SelectedInstrumentFilter}" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}"><ComboBoxItem Content="ALL"/><ComboBoxItem Content="6E"/><ComboBoxItem Content="ES"/><ComboBoxItem Content="NQ"/><ComboBoxItem Content="MES"/><ComboBoxItem Content="MNQ"/><ComboBoxItem Content="CL"/><ComboBoxItem Content="GC"/><ComboBoxItem Content="RTY"/><ComboBoxItem Content="ZB"/></ComboBox>
+                        <ComboBox Width="85" SelectedValuePath="Content" SelectedValue="{Binding SelectedInstrumentFilter}" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}" TextElement.Foreground="{StaticResource BrushTextPrimary}" TextElement.FontWeight="SemiBold"><ComboBoxItem Content="ALL"/><ComboBoxItem Content="6E"/><ComboBoxItem Content="ES"/><ComboBoxItem Content="NQ"/><ComboBoxItem Content="MES"/><ComboBoxItem Content="MNQ"/><ComboBoxItem Content="CL"/><ComboBoxItem Content="GC"/><ComboBoxItem Content="RTY"/><ComboBoxItem Content="ZB"/></ComboBox>
                         <TextBlock Text="Side:" Foreground="{StaticResource BrushTextSecondary}" VerticalAlignment="Center" Margin="12,0,5,0"/>
-                        <ComboBox Width="80" SelectedValuePath="Content" SelectedValue="{Binding SelectedSideFilter}" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}"><ComboBoxItem Content="ALL"/><ComboBoxItem Content="Long"/><ComboBoxItem Content="Short"/></ComboBox>
+                        <ComboBox Width="80" SelectedValuePath="Content" SelectedValue="{Binding SelectedSideFilter}" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}" TextElement.Foreground="{StaticResource BrushTextPrimary}" TextElement.FontWeight="SemiBold"><ComboBoxItem Content="ALL"/><ComboBoxItem Content="Long"/><ComboBoxItem Content="Short"/></ComboBox>
                         <TextBlock Text="Outcome:" Foreground="{StaticResource BrushTextSecondary}" VerticalAlignment="Center" Margin="12,0,5,0"/>
-                        <ComboBox Width="90" SelectedValuePath="Content" SelectedValue="{Binding SelectedOutcomeFilter}" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}"><ComboBoxItem Content="ALL"/><ComboBoxItem Content="WIN"/><ComboBoxItem Content="LOSS"/></ComboBox>
+                        <ComboBox Width="90" SelectedValuePath="Content" SelectedValue="{Binding SelectedOutcomeFilter}" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}" TextElement.Foreground="{StaticResource BrushTextPrimary}" TextElement.FontWeight="SemiBold"><ComboBoxItem Content="ALL"/><ComboBoxItem Content="WIN"/><ComboBoxItem Content="LOSS"/></ComboBox>
                     </StackPanel>
                 </DockPanel>
                 <Border Grid.Row="1" Style="{StaticResource CardPanel}" Padding="8">
@@ -84,7 +570,7 @@
                         <ItemsControl Grid.Row="1" ItemsSource="{Binding WeeklyCalendarRows}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Vertical"/>
+                                    <UniformGrid Columns="1" />
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
 
@@ -159,15 +645,39 @@
                                                                 BorderThickness="0"
                                                                 HorizontalContentAlignment="Stretch"
                                                                 VerticalContentAlignment="Stretch">
-                                                            <Grid Margin="7">
-                                                                <TextBlock Text="{Binding DayNumber}"
-                                                                           Foreground="{StaticResource BrushTextSecondary}"
-                                                                           FontSize="12"
-                                                                           FontWeight="Bold"
-                                                                           HorizontalAlignment="Left"
-                                                                           VerticalAlignment="Top"/>
-
-                                                                <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                            <Grid Margin="7" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                                                                <Grid.RowDefinitions>
+                                                                    <RowDefinition Height="Auto" />
+                                                                    <RowDefinition Height="*" />
+                                                                </Grid.RowDefinitions>
+                                                                <StackPanel Grid.Row="0" Orientation="Horizontal"
+                                                                            HorizontalAlignment="Center"
+                                                                            VerticalAlignment="Center"
+                                                                            Margin="0,0,0,2">
+                                                                    <TextBlock Text="{Binding DayNumber}"
+                                                                               Foreground="#D4AF37"
+                                                                               FontSize="12"
+                                                                               FontWeight="Bold"
+                                                                               VerticalAlignment="Center"
+                                                                               Margin="0,0,6,0"/>
+                                                                    <TextBlock Text="DAILY P&amp;L"
+                                                                               Foreground="{StaticResource BrushTextSecondary}"
+                                                                               FontSize="9"
+                                                                               FontWeight="Bold"
+                                                                               VerticalAlignment="Center">
+                                                                        <TextBlock.Style>
+                                                                            <Style TargetType="TextBlock">
+                                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding HasTrades}" Value="False">
+                                                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </TextBlock.Style>
+                                                                    </TextBlock>
+                                                                </StackPanel>
+                                                                <Grid Grid.Row="1" Margin="0,2,0,0" VerticalAlignment="Center" HorizontalAlignment="Center">
 
                                                                     <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                                                                         <StackPanel.Style>
@@ -180,12 +690,6 @@
                                                                                 </Style.Triggers>
                                                                             </Style>
                                                                         </StackPanel.Style>
-
-                                                                        <TextBlock Text="DAILY P&amp;L"
-                                                                                   Foreground="{StaticResource BrushTextSecondary}"
-                                                                                   FontSize="9"
-                                                                                   FontWeight="Bold"
-                                                                                   HorizontalAlignment="Center"/>
 
                                                                         <TextBlock Text="{Binding DailyPnL, StringFormat={}{0:C2}}"
                                                                                    FontSize="14"
@@ -223,22 +727,27 @@
                                                                     </StackPanel>
 
                                                                     <TextBlock Text="NO TRADE"
-                                                                               Foreground="{StaticResource BrushTextSecondary}"
-                                                                               FontSize="11"
-                                                                               FontWeight="Bold"
-                                                                               HorizontalAlignment="Center"
-                                                                               VerticalAlignment="Center">
-                                                                        <TextBlock.Style>
-                                                                            <Style TargetType="TextBlock">
-                                                                                <Setter Property="Visibility" Value="Collapsed"/>
-                                                                                <Style.Triggers>
-                                                                                    <DataTrigger Binding="{Binding HasTrades}" Value="False">
-                                                                                        <Setter Property="Visibility" Value="Visible"/>
-                                                                                    </DataTrigger>
-                                                                                </Style.Triggers>
-                                                                            </Style>
-                                                                        </TextBlock.Style>
-                                                                    </TextBlock>
+           FontFamily="Segoe UI"
+           Foreground="#B5C0CF"
+           FontSize="12"
+           FontWeight="SemiBold"
+           TextOptions.TextFormattingMode="Ideal"
+           TextOptions.TextRenderingMode="Grayscale"
+           UseLayoutRounding="True"
+           SnapsToDevicePixels="True"
+           HorizontalAlignment="Center"
+           VerticalAlignment="Center">
+    <TextBlock.Style>
+        <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding HasTrades}" Value="False">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </TextBlock.Style>
+</TextBlock>
 
                                                                 </Grid>
                                                             </Grid>
@@ -394,19 +903,23 @@
                         <controls:TradeTimelineControl x:Name="TimelineControl" Height="24" CurrentPositionSeconds="{Binding CurrentVideoTime, Mode=OneWay}" TotalDurationSeconds="{Binding TotalVideoDuration}" ActiveTrade="{Binding ActiveTrade}"/>
                         <DockPanel Margin="0,8,0,0">
                             <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                                <Button Content="⏮ -5s" Command="{Binding SeekRelativeCommand}" CommandParameter="-5" Style="{StaticResource TerminalButton}" Margin="0,0,5,0"/>
-                                <Button Content="PLAY / PAUSE" Command="{Binding TogglePlayPauseCommand}" Style="{StaticResource TerminalButton}" Margin="0,0,5,0"/>
-                                <Button Content="+5s ⏭" Command="{Binding SeekRelativeCommand}" CommandParameter="5" Style="{StaticResource TerminalButton}" Margin="0,0,12,0"/>
+                                <Button Content="⏮ -5s" Command="{Binding SeekRelativeCommand}" CommandParameter="-5" Style="{StaticResource TerminalButton}" Click="TimelineControlButton_Click" Margin="0,0,5,0"/>
+                                <Button Content="PLAY / PAUSE" Command="{Binding TogglePlayPauseCommand}" Style="{StaticResource TerminalButton}" Click="TimelineControlButton_Click" Margin="0,0,5,0"/>
+                                <Button Content="+5s ⏭" Command="{Binding SeekRelativeCommand}" CommandParameter="5" Style="{StaticResource TerminalButton}" Click="TimelineControlButton_Click" Margin="0,0,12,0"/>
+                                <Button Content="FIT"
+
+        Style="{StaticResource TerminalButton}"
+        Margin="0,0,12,0" Click="FitVideo_Click"/>
                                 <TextBlock Text="Speed:" Foreground="{StaticResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,5,0"/>
-                                <Button Content="0.5x" Command="{Binding ChangeSpeedCommand}" CommandParameter="0.5" Style="{StaticResource TerminalButton}" Margin="0,0,4,0"/>
-                                <Button Content="1.0x" Command="{Binding ChangeSpeedCommand}" CommandParameter="1" Style="{StaticResource TerminalButton}" Margin="0,0,4,0"/>
-                                <Button Content="2.0x" Command="{Binding ChangeSpeedCommand}" CommandParameter="2" Style="{StaticResource TerminalButton}"/>
+                                <Button Content="0.5x" Command="{Binding ChangeSpeedCommand}" CommandParameter="0.5" Style="{StaticResource TerminalButton}" Click="TimelineControlButton_Click" Margin="0,0,4,0"/>
+                                <Button Content="1.0x" Command="{Binding ChangeSpeedCommand}" CommandParameter="1" Style="{StaticResource TerminalButton}" Click="TimelineControlButton_Click" Margin="0,0,4,0"/>
+                                <Button Content="2.0x" Command="{Binding ChangeSpeedCommand}" CommandParameter="2" Style="{StaticResource TerminalButton}" Click="TimelineControlButton_Click"/>
                             </StackPanel>
                             <TextBlock DockPanel.Dock="Right" Foreground="{StaticResource BrushTextPrimary}" VerticalAlignment="Center"><TextBlock.Text><MultiBinding StringFormat="{}{0:mm\:ss} / {1:mm\:ss}"><Binding Path="CurrentVideoTime" Converter="{StaticResource SecondsToTimeSpanConverter}"/><Binding Path="TotalVideoDuration" Converter="{StaticResource SecondsToTimeSpanConverter}"/></MultiBinding></TextBlock.Text></TextBlock>
                         </DockPanel>
                     </StackPanel>
                     <Border Grid.Row="3" Style="{StaticResource CardPanel}">
-                        <DataGrid x:Name="TradesGrid" ItemsSource="{Binding DayTrades}" SelectedItem="{Binding ActiveTrade, Mode=OneWay}" AutoGenerateColumns="False" Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="None" RowBackground="Transparent" AlternatingRowBackground="#1A202C" Foreground="{StaticResource BrushTextPrimary}" SelectionChanged="TradesGrid_SelectionChanged">
+                        <DataGrid x:Name="TradesGrid" ItemsSource="{Binding DayTrades}" SelectedItem="{Binding ActiveTrade, Mode=OneWay}" AutoGenerateColumns="False" Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="None" RowBackground="Transparent" AlternatingRowBackground="#111B27" Foreground="{StaticResource BrushTextPrimary}" SelectionChanged="TradesGrid_SelectionChanged">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Time" Binding="{Binding EntryTime, StringFormat={}{0:HH:mm:ss}}" Width="85"/><DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="70"/><DataGridTextColumn Header="Side" Binding="{Binding Side}" Width="65"/><DataGridTextColumn Header="Qty" Binding="{Binding Quantity}" Width="45"/><DataGridTextColumn Header="Entry" Binding="{Binding EntryPrice}" Width="85"/><DataGridTextColumn Header="Exit" Binding="{Binding ExitPrice}" Width="85"/><DataGridTextColumn Header="P&amp;L" Binding="{Binding NetPnL, StringFormat={}{0:C2}}" Width="95"/><DataGridTextColumn Header="R:R" Binding="{Binding RealizedRR, StringFormat={}1:{0}}" Width="70"/>
                             </DataGrid.Columns>
@@ -570,52 +1083,179 @@
                                 <TextBlock Text="JOURNAL &amp; TAGS" Foreground="{StaticResource BrushTextSecondary}" FontSize="12" FontWeight="Bold" Margin="0,0,0,10"/>
                                 <TextBox Text="{Binding NotesText, UpdateSourceTrigger=PropertyChanged}" Height="90" AcceptsReturn="True" TextWrapping="Wrap" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}" BorderBrush="{StaticResource BrushBorder}" Padding="6"/>
                                 <Button Content="SAVE NOTES" Command="{Binding SaveNotesCommand}" Style="{StaticResource TerminalButton}" HorizontalAlignment="Right" Margin="0,6,0,0"/>
-                                <TextBlock Text="Tags" Foreground="{StaticResource BrushTextSecondary}" FontSize="11" Margin="0,8,0,4"/>
-                                <DockPanel>
-                                    <Button Content="ADD" Command="{Binding AddTagCommand}" DockPanel.Dock="Right" Style="{StaticResource TerminalButton}" Margin="5,0,0,0"/>
-                                    <TextBox Text="{Binding NewTagInput, UpdateSourceTrigger=PropertyChanged}" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}" BorderBrush="{StaticResource BrushBorder}" Padding="4"/>
-                                </DockPanel>
-                                <ItemsControl ItemsSource="{Binding TagsList}" Margin="0,8,0,0">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <WrapPanel/>
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Border Background="{StaticResource BrushSurfaceLight}" BorderBrush="{StaticResource BrushBorder}" BorderThickness="1" CornerRadius="10" Padding="8,3" Margin="2">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="{Binding}" Foreground="{StaticResource BrushAccentBlue}" FontSize="11" Margin="0,0,5,0"/>
-                                                    <Button Content="✕" Command="{Binding DataContext.RemoveTagCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}" CommandParameter="{Binding}" Background="Transparent" BorderThickness="0" Foreground="{StaticResource BrushRedBright}" FontSize="9"/>
-                                                </StackPanel>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                <TextBlock Text="{Binding NotesSaveStatus}" Foreground="{StaticResource BrushTextSecondary}" FontSize="10" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                                                <Separator Margin="0,10,0,8" Background="{StaticResource BrushBorder}"/>
+                                <Border Style="{StaticResource CardPanel}" Padding="8" Margin="0,0,0,4">
+                                    <StackPanel>
+                                        <TextBlock Text="JOURNAL CHECKLIST" Foreground="{StaticResource BrushTextPrimary}" FontSize="12" FontWeight="Bold" Margin="0,0,0,5"/>
+                                        <TextBlock Text="{Binding ChecklistSaveStatus}" Foreground="{StaticResource BrushTextSecondary}" FontSize="10" Margin="0,0,0,7" TextWrapping="Wrap"/>
+                                        <StackPanel IsEnabled="{Binding IsJournalChecklistLoaded}">
+                                            <TextBlock Text="SETUP" Foreground="{StaticResource BrushAccentBlue}" FontSize="11" FontWeight="Bold" Margin="0,2,0,5"/>
+                                            <UniformGrid Columns="2" Margin="0,0,0,7">
+                                                <CheckBox Content="hunt-p3" IsChecked="{Binding HuntP3, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="hunt-p2" IsChecked="{Binding HuntP2, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="chop-p2" IsChecked="{Binding ChopP2, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="chop-p3" IsChecked="{Binding ChopP3, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="MAJOR SWING" IsChecked="{Binding MajorSwing, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="ORDER BLOCK" IsChecked="{Binding OrderBlock, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Running-HS" IsChecked="{Binding RunningHS, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Running-LS" IsChecked="{Binding RunningLS, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                            </UniformGrid>
+                                            <Separator Margin="0,5,0,7" Background="{StaticResource BrushBorder}"/>
+                                            <TextBlock Text="BOX CHART" Foreground="{StaticResource BrushAccentBlue}" FontSize="11" FontWeight="Bold" Margin="0,2,0,5"/>
+                                            <StackPanel Margin="0,0,0,7">
+                                                <CheckBox Content="Bullish DOM pressure" IsChecked="{Binding BoxBullishDomPressure, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Bearish DOM pressure" IsChecked="{Binding BoxBearishDomPressure, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Large Volume By Bid" IsChecked="{Binding BoxLargeVolumeByBid, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Large Volume By Ask" IsChecked="{Binding BoxLargeVolumeByAsk, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Big Trade Sweep by Ag-Buyer" IsChecked="{Binding BoxBigTradeSweepAgBuyer, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Big Trade Sweep by Ag-Seller" IsChecked="{Binding BoxBigTradeSweepAgSeller, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Big Trade Absorption of Ag-Buyer" IsChecked="{Binding BoxBigTradeAbsorptionAgBuyer, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Big Trade Absorption of Ag-Seller" IsChecked="{Binding BoxBigTradeAbsorptionAgSeller, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="SELL TRADE SIZE CC BEARISH" IsChecked="{Binding BoxSellTradeSizeCCBearish, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="SELL TRADE SIZE CC BULLISH" IsChecked="{Binding BoxSellTradeSizeCCBullish, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="BOTH TRADE SIZE CC BULLISH" IsChecked="{Binding BoxBothTradeSizeCCBullish, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="BOTH TRADE SIZE CC BEARISH" IsChecked="{Binding BoxBothTradeSizeCCBearish, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="BUY TRADE SIZE CC BEARISH" IsChecked="{Binding BoxBuyTradeSizeCCBearish, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="BUY TRADE SIZE CC BULLISH" IsChecked="{Binding BoxBuyTradeSizeCCBullish, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                            </StackPanel>
+                                            <Separator Margin="0,5,0,7" Background="{StaticResource BrushBorder}"/>                                            <TextBlock Text="FOOTPRINT" Foreground="{StaticResource BrushAccentBlue}" FontSize="11" FontWeight="Bold" Margin="0,2,0,5"/>
+                                            <UniformGrid Columns="2" Margin="0,0,0,7">
+                                                <CheckBox Content="Cover candle" IsChecked="{Binding FootprintCoverCandle, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Ag-Buyer Absorption" IsChecked="{Binding FootprintAgBuyerAbsorption, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Delta Convergence ± 10" IsChecked="{Binding FootprintDeltaConvergence10, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Ag-Seller Absorption" IsChecked="{Binding FootprintAgSellerAbsorption, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Delta Divergence ± 8" IsChecked="{Binding FootprintDeltaDivergence8, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Ag-Buyer Exhaustion" IsChecked="{Binding FootprintAgBuyerExpulsion, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                            </UniformGrid>
+                                            <TextBlock Text="Value in Bullish — Range Bar" Foreground="{StaticResource BrushTextSecondary}" FontSize="10" Margin="2,2,2,3"/>
+                                            <UniformGrid Columns="3" Margin="0,0,0,5">
+                                                <CheckBox Content="Low" IsChecked="{Binding FootprintBullishValueLow, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Mid" IsChecked="{Binding FootprintBullishValueMid, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Top" IsChecked="{Binding FootprintBullishValueTop, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                            </UniformGrid>
+                                            <TextBlock Text="Value in Bearish — Range Bar" Foreground="{StaticResource BrushTextSecondary}" FontSize="10" Margin="2,2,2,3"/>
+                                            <UniformGrid Columns="3" Margin="0,0,0,7">
+                                                <CheckBox Content="Low" IsChecked="{Binding FootprintBearishValueLow, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Mid" IsChecked="{Binding FootprintBearishValueMid, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                                <CheckBox Content="Top" IsChecked="{Binding FootprintBearishValueTop, Mode=TwoWay}" Foreground="{StaticResource BrushTextPrimary}" Margin="2"/>
+                                            </UniformGrid>
+                                            <Separator Margin="0,5,0,7" Background="{StaticResource BrushBorder}"/>
+                                            <TextBlock Text="ORDER BOOK" Foreground="{StaticResource BrushAccentBlue}" FontSize="11" FontWeight="Bold" Margin="0,2,0,4"/>
+                                            <TextBlock Text="Order Book checklist criteria to be configured." Foreground="{StaticResource BrushTextMuted}" FontSize="10" TextWrapping="Wrap" Margin="2,0,2,3"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </Border>
+                        <Border Style="{StaticResource CardPanel}" Margin="0,10,0,0">
+                            <StackPanel>
+                                <TextBlock Text="TRADE MARKET CONTEXT" Foreground="{StaticResource BrushTextSecondary}" FontSize="12" FontWeight="Bold" Margin="0,0,0,10"/>
+
+                                <TextBlock Text="SESSION" Foreground="{StaticResource BrushAccentBlue}" FontSize="10" FontWeight="Bold" Margin="0,0,0,5"/>
+                                <ComboBox SelectedValue="{Binding ActiveTrade.MarketContext.Session, Mode=TwoWay}" SelectedValuePath="Content" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}" TextElement.Foreground="{StaticResource BrushTextPrimary}" Margin="0,0,0,10">
+                                    <ComboBoxItem Content="RTH"/>
+                                    <ComboBoxItem Content="ETH"/>
+                                    <ComboBoxItem Content="Unknown"/>
+                                </ComboBox>
+
+                                <TextBlock Text="EXECUTION QUALITY" Foreground="{StaticResource BrushAccentBlue}" FontSize="10" FontWeight="Bold" Margin="0,0,0,5"/>
+                                <ComboBox SelectedValue="{Binding ActiveTrade.MarketContext.ExecutionQuality, Mode=TwoWay}" SelectedValuePath="Content" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}" TextElement.Foreground="{StaticResource BrushTextPrimary}" Margin="0,0,0,8">
+                                    <ComboBoxItem Content="Perfect"/>
+                                    <ComboBoxItem Content="Acceptable"/>
+                                    <ComboBoxItem Content="Early"/>
+                                    <ComboBoxItem Content="Late"/>
+                                    <ComboBoxItem Content="Chase"/>
+                                    <ComboBoxItem Content="Hesitated"/>
+                                </ComboBox>
+
+                                <TextBlock Text="CONTEXT CONFIDENCE" Foreground="{StaticResource BrushAccentBlue}" FontSize="10" FontWeight="Bold" Margin="0,0,0,5"/>
+                                <ComboBox SelectedValue="{Binding ActiveTrade.MarketContext.ContextConfidence, Mode=TwoWay}" SelectedValuePath="Tag" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}" TextElement.Foreground="{StaticResource BrushTextPrimary}" Margin="0,0,0,8">
+                                    <ComboBoxItem Tag="0" Content="Low"/>
+                                    <ComboBoxItem Tag="1" Content="Medium"/>
+                                    <ComboBoxItem Tag="2" Content="High"/>
+                                </ComboBox>
+
+                                <TextBlock Text="TRADE QUALITY" Foreground="{StaticResource BrushAccentBlue}" FontSize="10" FontWeight="Bold" Margin="0,0,0,5"/>
+                                <ComboBox SelectedValue="{Binding ActiveTrade.MarketContext.TradeQuality, Mode=TwoWay}" SelectedValuePath="Tag" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}" TextElement.Foreground="{StaticResource BrushTextPrimary}" Margin="0,0,0,10">
+                                    <ComboBoxItem Tag="0" Content="Not Rated"/>
+                                    <ComboBoxItem Tag="1" Content="★"/>
+                                    <ComboBoxItem Tag="2" Content="★★"/>
+                                    <ComboBoxItem Tag="3" Content="★★★"/>
+                                    <ComboBoxItem Tag="4" Content="★★★★"/>
+                                    <ComboBoxItem Tag="5" Content="★★★★★"/>
+                                </ComboBox>
+
+                                <Button Content="SAVE MARKET CONTEXT" Command="{Binding SaveMarketContextCommand}" Style="{StaticResource TerminalButton}" HorizontalAlignment="Right"/>
+                            </StackPanel>
+                        </Border>
+
                     </StackPanel>
                 </ScrollViewer>
             </Grid>
 
-            <Border Visibility="{Binding DataContext.SelectedNavigationIndex, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource IntToVisibilityConverter}, ConverterParameter=3}" Style="{StaticResource CardPanel}" MaxWidth="700" HorizontalAlignment="Left">
-                <StackPanel><TextBlock Text="SETTINGS &amp; RECORDER INTEGRATION" Foreground="{StaticResource BrushTextPrimary}" FontSize="16" FontWeight="Bold" Margin="0,0,0,15"/><TextBlock Text="BEN Trade Recorder Source Path" Foreground="{StaticResource BrushTextSecondary}" Margin="0,0,0,4"/><TextBox Text="{Binding SettingsVM.RecorderPath, UpdateSourceTrigger=PropertyChanged}" Background="{StaticResource BrushSurfaceLight}" Foreground="{StaticResource BrushTextPrimary}" BorderBrush="{StaticResource BrushBorder}" Padding="6"/><CheckBox Content="Enable hardware-accelerated video playback" IsChecked="{Binding SettingsVM.EnableHardwareAcceleration}" Foreground="{StaticResource BrushTextPrimary}" Margin="0,15,0,0"/><CheckBox Content="Watch folder for automated real-time trade import" IsChecked="{Binding SettingsVM.AutoWatchFolder}" Foreground="{StaticResource BrushTextPrimary}" Margin="0,10,0,0"/><TextBlock Text="Supported video slots: Monitor 1–4. Missing files remain blank." Foreground="{StaticResource BrushTextMuted}" FontSize="11" Margin="0,15,0,0"/></StackPanel>
-            </Border>
+            <Grid Visibility="{Binding DataContext.SelectedNavigationIndex,
+                         RelativeSource={RelativeSource AncestorType=Window},
+                         Converter={StaticResource IntToVisibilityConverter},
+                         ConverterParameter=3}">
+    <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="350"/>
+        <ColumnDefinition Width="*"/>
+    </Grid.ColumnDefinitions>
+
+    <!-- SETTINGS PANEL -->
+    <Border Grid.Column="0"
+            Style="{StaticResource CardPanel}"
+            MaxWidth="700"
+            HorizontalAlignment="Left">
+        <StackPanel>
+            <TextBlock Text="SETTINGS &amp; RECORDER INTEGRATION"
+                       Foreground="{StaticResource BrushTextPrimary}"
+                       FontSize="16"
+                       FontWeight="Bold"
+                       Margin="0,0,0,15"/>
+
+            <TextBlock Text="BEN Trade Recorder Source Path"
+                       Foreground="{StaticResource BrushTextSecondary}"
+                       Margin="0,0,0,4"/>
+
+            <TextBox Text="{Binding SettingsVM.RecorderPath, UpdateSourceTrigger=PropertyChanged}"
+                     Background="{StaticResource BrushSurfaceLight}"
+                     Foreground="{StaticResource BrushTextPrimary}"
+                     BorderBrush="{StaticResource BrushBorder}"
+                     Padding="6"/>
+
+            <CheckBox Content="Enable hardware-accelerated video playback"
+                      IsChecked="{Binding SettingsVM.EnableHardwareAcceleration}"
+                      Foreground="{StaticResource BrushTextPrimary}"
+                      Margin="0,15,0,0"/>
+
+            <CheckBox Content="Watch folder for automated real-time trade import"
+                      IsChecked="{Binding SettingsVM.AutoWatchFolder}"
+                      Foreground="{StaticResource BrushTextPrimary}"
+                      Margin="0,10,0,0"/>
+
+            <TextBlock Text="Supported video slots: Monitor 1–4. Missing files remain blank."
+                       Foreground="{StaticResource BrushTextMuted}"
+                       FontSize="11"
+                       Margin="0,15,0,0"/>
+        </StackPanel>
+    </Border>
+
+    <!-- BEN LOGO AREA: SETTINGS ONLY -->
+    <Grid Grid.Column="1"
+          Background="Black"
+          Margin="0">
+        <Image Source="/BENTradeReviewer.UI;component/Assets/BENLogo.png"
+               Opacity="0.70"
+               Stretch="Uniform"
+               HorizontalAlignment="Center"
+               VerticalAlignment="Center"
+               IsHitTestVisible="False"/>
+    </Grid>
+</Grid>
         </Grid>
 
         <Border Grid.Row="3" Background="{StaticResource BrushSurfaceDark}" BorderBrush="{StaticResource BrushBorder}" BorderThickness="0,1,0,0" Padding="10,0"><DockPanel><TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource BrushTextSecondary}" VerticalAlignment="Center" FontSize="11"/><ProgressBar IsIndeterminate="True" Width="110" Height="10" HorizontalAlignment="Right" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVisConverter}}"/></DockPanel></Border>
     </Grid>
 </Window>
-
-
-
-
-
-
-
-
-
-
-
-
-
