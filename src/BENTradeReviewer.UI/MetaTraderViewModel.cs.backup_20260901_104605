@@ -1,0 +1,221 @@
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.CompilerServices;
+
+using BENTradeReviewer.UI.MetaTrader;
+
+namespace BENTradeReviewer;
+
+public sealed class MetaTraderViewModel :
+    INotifyPropertyChanged
+{
+    private readonly MetaTraderRepository _repository;
+    private readonly MetaTraderImporter _importer;
+
+    private string _dataFolder = string.Empty;
+
+    private string _statusMessage =
+        "MetaTrader journal ready.";
+
+    private MetaTraderTrade? _selectedTrade;
+
+    public ObservableCollection<MetaTraderTrade> Trades { get; } =
+        new();
+
+    public string DataFolder
+    {
+        get => _dataFolder;
+
+        set
+        {
+            if (_dataFolder == value)
+                return;
+
+            _dataFolder = value;
+
+            OnPropertyChanged();
+
+            LoadTrades();
+        }
+    }
+
+    public MetaTraderTrade? SelectedTrade
+    {
+        get => _selectedTrade;
+
+        set
+        {
+            if (ReferenceEquals(
+                    _selectedTrade,
+                    value))
+            {
+                return;
+            }
+
+            _selectedTrade = value;
+
+            OnPropertyChanged();
+        }
+    }
+
+    public string StatusMessage
+    {
+        get => _statusMessage;
+
+        private set
+        {
+            if (_statusMessage == value)
+                return;
+
+            _statusMessage = value;
+
+            OnPropertyChanged();
+        }
+    }
+
+    public int TotalTrades =>
+        Trades.Count;
+
+    public int WinningTrades =>
+        Trades.Count(x => x.PnL > 0m);
+
+    public int LosingTrades =>
+        Trades.Count(x => x.PnL < 0m);
+
+    public decimal NetPnL =>
+        Trades.Sum(x => x.PnL);
+
+    public double WinRate =>
+        TotalTrades == 0
+            ? 0d
+            : WinningTrades * 100d / TotalTrades;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public MetaTraderViewModel()
+    {
+        var applicationDirectory =
+            Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData),
+                "BENTradeReviewer");
+
+        Directory.CreateDirectory(
+            applicationDirectory);
+
+        var databasePath =
+            Path.Combine(
+                applicationDirectory,
+                "metatrader.db");
+
+        _repository =
+            new MetaTraderRepository(
+                databasePath);
+
+        _importer =
+            new MetaTraderImporter(
+                _repository);
+
+        // MT5 FILE_COMMON location:
+        // %APPDATA%\MetaQuotes\Terminal\Common\Files\BEN_MetaTrader
+        //
+        // This is the same shared Common\Files location used by
+        // the BEN MetaTrader EA through FILE_COMMON.
+
+        var mtCommonFolder =
+            Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.ApplicationData),
+                "MetaQuotes",
+                "Terminal",
+                "Common",
+                "Files",
+                "BEN_MetaTrader");
+
+        DataFolder = mtCommonFolder;
+
+        Directory.CreateDirectory(
+            DataFolder);
+
+        LoadTrades();
+    }
+
+    public void Import()
+    {
+        var result =
+            _importer.ImportFolder(
+                DataFolder);
+
+        LastFilesFound =
+            result.FilesFound;
+
+        LastImported =
+            result.Imported;
+
+        LastFailed =
+            result.Failed;
+
+        LastImportErrors =
+            string.Join(
+                Environment.NewLine,
+                result.Errors.Take(20));
+
+        LoadTrades();
+
+        StatusMessage =
+            $"Found {LastFilesFound} JSON | " +
+            $"Imported {LastImported} | " +
+            $"Failed {LastFailed}";
+
+        OnPropertyChanged(nameof(LastFilesFound));
+        OnPropertyChanged(nameof(LastImported));
+        OnPropertyChanged(nameof(LastFailed));
+        OnPropertyChanged(nameof(LastImportErrors));
+        OnPropertyChanged(nameof(StatusMessage));
+    }
+
+    public void LoadTrades()
+    {
+        var previouslySelectedId =
+            SelectedTrade?.TradeId;
+
+        Trades.Clear();
+
+        foreach (var trade in
+                 _repository.GetAllTrades())
+        {
+            Trades.Add(trade);
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                previouslySelectedId))
+        {
+            SelectedTrade =
+                Trades.FirstOrDefault(
+                    x => x.TradeId ==
+                         previouslySelectedId);
+        }
+
+        if (SelectedTrade is null &&
+            Trades.Count > 0)
+        {
+            SelectedTrade = Trades[0];
+        }
+
+        OnPropertyChanged(nameof(TotalTrades));
+        OnPropertyChanged(nameof(WinningTrades));
+        OnPropertyChanged(nameof(LosingTrades));
+        OnPropertyChanged(nameof(NetPnL));
+        OnPropertyChanged(nameof(WinRate));
+    }
+
+    private void OnPropertyChanged(
+        [CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(
+                propertyName));
+    }
+}

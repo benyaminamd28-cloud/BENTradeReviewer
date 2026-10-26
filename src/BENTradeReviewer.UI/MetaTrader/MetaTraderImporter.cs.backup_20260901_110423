@@ -1,0 +1,177 @@
+using System.IO;
+using System.Text.Json;
+
+namespace BENTradeReviewer.UI.MetaTrader;
+
+public sealed class MetaTraderImportResult
+{
+    public int FilesFound { get; set; }
+
+    public int Imported { get; set; }
+
+    public int Failed { get; set; }
+
+    public List<string> Errors { get; } = new();
+}
+
+public sealed class MetaTraderImporter
+{
+    private static readonly JsonSerializerOptions JsonOptions =
+        new()
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
+    private readonly MetaTraderRepository _repository;
+
+    public MetaTraderImporter(
+        MetaTraderRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public MetaTraderImportResult ImportFolder(
+        string folder)
+    {
+        var result =
+            new MetaTraderImportResult();
+
+        if (!Directory.Exists(folder))
+        {
+            result.Errors.Add(
+                $"Folder does not exist: {folder}");
+
+            return result;
+        }
+
+        var files =
+            Directory
+                .EnumerateFiles(
+                    folder,
+                    "*.json",
+                    SearchOption.TopDirectoryOnly)
+                .OrderBy(x => x)
+                .ToList();
+
+        result.FilesFound =
+            files.Count;
+
+        foreach (var file in files)
+        {
+            try
+            {
+                string json =
+                    File.ReadAllText(file);
+
+                var trade =
+                    JsonSerializer.Deserialize<MetaTraderTrade>(
+                        json,
+                        JsonOptions);
+
+                if (trade is null)
+                {
+                    throw new InvalidDataException(
+                        "JSON deserialized to null.");
+                }
+
+                ValidateTrade(trade);
+
+                _repository.UpsertTrade(
+                    trade);
+
+                result.Imported++;
+            }
+            catch (Exception ex)
+            {
+                result.Failed++;
+
+                result.Errors.Add(
+                    $"{Path.GetFileName(file)}: {ex.Message}");
+            }
+        }
+
+        return result;
+    }
+
+    private static void ValidateTrade(
+        MetaTraderTrade trade)
+    {
+        if (string.IsNullOrWhiteSpace(
+                trade.TradeId))
+        {
+            throw new InvalidDataException(
+                "TradeId is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(
+                trade.Symbol))
+        {
+            throw new InvalidDataException(
+                "Symbol is required.");
+        }
+
+        if (!trade.Side.Equals(
+                "BUY",
+                StringComparison.OrdinalIgnoreCase)
+            &&
+            !trade.Side.Equals(
+                "SELL",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                "Side must be BUY or SELL.");
+        }
+
+        if (trade.Quantity <= 0m)
+        {
+            throw new InvalidDataException(
+                $"Quantity is invalid: {trade.Quantity}");
+        }
+
+        if (trade.EntryPrice <= 0m)
+        {
+            throw new InvalidDataException(
+                $"EntryPrice is invalid: {trade.EntryPrice}");
+        }
+
+        if (trade.Exits is null ||
+            trade.Exits.Count == 0)
+        {
+            throw new InvalidDataException(
+                "No exit events found.");
+        }
+
+        foreach (var exit in trade.Exits)
+        {
+            if (exit.Quantity <= 0m)
+            {
+                throw new InvalidDataException(
+                    $"Exit quantity invalid: {exit.Quantity}");
+            }
+
+            if (exit.Price <= 0m)
+            {
+                throw new InvalidDataException(
+                    $"Exit price invalid: {exit.Price}");
+            }
+
+            if (exit.Time < trade.EntryTime)
+            {
+                throw new InvalidDataException(
+                    "Exit time is before entry time.");
+            }
+        }
+
+        decimal closedQuantity =
+            trade.Exits.Sum(
+                x => x.Quantity);
+
+        if (closedQuantity >
+            trade.Quantity + 0.00000001m)
+        {
+            throw new InvalidDataException(
+                $"Closed quantity {closedQuantity} exceeds " +
+                $"initial quantity {trade.Quantity}.");
+        }
+    }
+}

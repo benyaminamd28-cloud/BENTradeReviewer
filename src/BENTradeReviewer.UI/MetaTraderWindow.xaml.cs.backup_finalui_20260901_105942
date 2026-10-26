@@ -1,0 +1,130 @@
+using System.Linq;
+using System;
+using System.Windows;
+
+namespace BENTradeReviewer;
+
+public partial class MetaTraderWindow : Window
+{
+    private readonly MetaTraderViewModel _viewModel;
+
+    public MetaTraderWindow()
+    {
+        InitializeComponent();
+
+        _viewModel =
+            new MetaTraderViewModel();
+
+        DataContext =
+            _viewModel;
+
+        Loaded += (_, _) =>
+        {
+            MessageBox.Show(
+                this,
+                $"VIEWMODEL TRADES COUNT = {_viewModel.TotalTrades}" +
+                Environment.NewLine +
+                $"FIRST TRADE = {_viewModel.Trades.FirstOrDefault()?.TradeId ?? "NULL"}" +
+                Environment.NewLine +
+                $"LAST TRADE = {_viewModel.Trades.LastOrDefault()?.TradeId ?? "NULL"}",
+                "BEN MT5 UI DIAGNOSTIC",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+        };
+    }
+
+    private void Import_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        try
+        {
+            _viewModel.Import();
+
+            string message =
+                "META TRADER IMPORT RESULT"
+                + Environment.NewLine
+                + Environment.NewLine
+                + "Folder:"
+                + Environment.NewLine
+                + _viewModel.DataFolder
+                + Environment.NewLine
+                + Environment.NewLine
+                + $"JSON files found: {_viewModel.LastFilesFound}"
+                + Environment.NewLine
+                + $"Imported / updated: {_viewModel.LastImported}"
+                + Environment.NewLine
+                + $"Failed: {_viewModel.LastFailed}";
+
+            if (_viewModel.LastFailed > 0 &&
+                !string.IsNullOrWhiteSpace(
+                    _viewModel.LastImportErrors))
+            {
+                message +=
+                    Environment.NewLine
+                    + Environment.NewLine
+                    + "FIRST ERRORS:"
+                    + Environment.NewLine
+                    + _viewModel.LastImportErrors;
+            }
+
+            MessageBox.Show(
+                this,
+                message,
+                "BEN Trade Reviewer — MetaTrader Import",
+                MessageBoxButton.OK,
+                _viewModel.LastFailed > 0
+                    ? MessageBoxImage.Warning
+                    : MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                this,
+                ex.ToString(),
+                "META TRADER IMPORT ERROR",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+    }
+
+    private void ViewDetail_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (_viewModel.SelectedTrade is null)
+        {
+            MessageBox.Show(
+                this,
+                "Select a MetaTrader trade first.",
+                "MetaTrader Journal",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
+
+        var detail =
+            new MetaTraderTradeDetailWindow(
+                _viewModel.SelectedTrade);
+
+        detail.Owner = this;
+
+        detail.ShowDialog();
+    }
+
+    private void Back_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var startup =
+            new StartupWindow();
+
+        Application.Current.MainWindow =
+            startup;
+
+        startup.Show();
+
+        Close();
+    }
+}

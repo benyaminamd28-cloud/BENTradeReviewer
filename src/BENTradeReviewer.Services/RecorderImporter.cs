@@ -10,6 +10,11 @@ public sealed class RecorderImporter
 {
     private readonly TradeRepository _repository;
 
+    // Import diagnostics from the most recent scan.
+    public List<string> LastImportErrors { get; } = new();
+
+    public int LastImportFailedCount => LastImportErrors.Count;
+
     public RecorderImporter(TradeRepository repository)
     {
         _repository = repository;
@@ -31,6 +36,8 @@ public sealed class RecorderImporter
 
         var count = 0;
 
+        LastImportErrors.Clear();
+
         foreach (var dir in dirs)
         {
             ct.ThrowIfCancellationRequested();
@@ -48,7 +55,9 @@ public sealed class RecorderImporter
                     "*.*",
                     SearchOption.TopDirectoryOnly)
                 .Where(IsVideo)
-                .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(
+                    Path.GetFileName,
+                    StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             if (info is null)
@@ -70,6 +79,11 @@ public sealed class RecorderImporter
             }
             catch (Exception ex)
             {
+                var message =
+                    $"{Path.GetFileName(dir)}: {ex.Message}";
+
+                LastImportErrors.Add(message);
+
                 System.Diagnostics.Debug.WriteLine(
                     $"[Importer ERROR] {dir}: {ex}");
             }
@@ -87,238 +101,259 @@ public sealed class RecorderImporter
         if (string.IsNullOrWhiteSpace(tradeInfoPath) ||
             !File.Exists(tradeInfoPath))
         {
-            return null;
+            throw new InvalidDataException(
+                $"Final Recorder TradeInfo.txt is missing: {directoryPath}");
         }
 
         var lines = await File.ReadAllLinesAsync(
             tradeInfoPath,
             ct);
 
-        var kv = new Dictionary<string, string>(
-            StringComparer.OrdinalIgnoreCase);
+        var kv = ParseKeyValueLines(lines);
 
-        foreach (var rawLine in lines)
+        // ============================================================
+        // SMART EXECUTION FALLBACK
+        //
+        // Some newer Recorder TradeInfo files can contain UNKNOWN/0
+        // for Entry fields even though TradeExecutions.csv contains
+        // the actual Entry executions.
+        //
+        // TradeExecutions.csv is used only to repair missing/unknown
+        // Entry fields. TradeInfo remains the primary source.
+        // ============================================================
+
+        var executionsPath = Path.Combine(
+            directoryPath,
+            "TradeExecutions.csv");
+
+        RepairEntryFieldsFromExecutions(
+            kv,
+            executionsPath);
+
+        // ============================================================
+        // FINAL RECORDER FORMAT ONLY
+        // No legacy fallback.
+        // No silent defaults.
+        // ============================================================
+
+        var tradeId = RequiredKey(
+            kv,
+            "TradeId",
+            directoryPath);
+
+        // ============================================================
+        // IGNORE NON-TRADE RECORDER FOLDERS
+        //
+        // Recorder can generate a final TradeInfo.txt for a position
+        // lifecycle that never produced a completed entry.
+        //
+        // These folders are not failed trades and must not be imported.
+        // Current Recorder marker:
+        //   TotalEntryQuantity = 0
+        //   InitialEntryTime   = UNKNOWN
+        // ============================================================
+
+        if (kv.TryGetValue(
+                "TotalEntryQuantity",
+                out var rawQuantityText) &&
+            int.TryParse(
+                rawQuantityText.Trim(),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var rawQuantity) &&
+            rawQuantity == 0 &&
+            kv.TryGetValue(
+                "InitialEntryTime",
+                out var rawInitialEntryTime) &&
+            rawInitialEntryTime.Trim().Equals(
+                "UNKNOWN",
+                StringComparison.OrdinalIgnoreCase))
         {
-            var line = rawLine.Trim();
-
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-
-            var idx = line.IndexOf(':');
-
-            if (idx <= 0)
-                idx = line.IndexOf('=');
-
-            if (idx <= 0)
-                continue;
-
-            var key = line[..idx].Trim();
-            var value = line[(idx + 1)..].Trim();
-
-            kv[key] = value;
+            return null;
         }
 
-        var trade = new Trade
+        // ============================================================
+        // ROOT SYMBOL
+        //
+        // New Recorder format provides RootSymbol directly.
+        // Legacy Recorder files may only provide Instrument, e.g.:
+        //   ES SEP26
+        //   E-mini S&P 500 (ES)
+        //   6E SEP26
+        //   Euro FX (6E)
+        //
+        // Prefer RootSymbol. Fall back to a deterministic extraction
+        // from Instrument for legacy folders.
+        // ============================================================
+
+        var rootSymbol = string.Empty;
+
+        if (kv.TryGetValue("RootSymbol", out var rootSymbolValue) &&
+            !string.IsNullOrWhiteSpace(rootSymbolValue))
         {
-            FolderDirectory = directoryPath,
-            TradeId = Get(
+            rootSymbol = rootSymbolValue.Trim();
+        }
+        else
+        {
+            var instrument = RequiredKey(
                 kv,
-                "Trade ID",
-                Get(
-                    kv,
-                    "TradeId",
-                    Path.GetFileName(directoryPath)))
-        };
+                "Instrument",
+                tradeId);
 
-        // ============================================================
-        // SYMBOL / INSTRUMENT
-        // Supports:
-        //   RootSymbol: ES
-        //   Instrument: ES SEP26
-        //   Instrument: E-mini S&P 500 (ES)
-        //   Instrument: Euro FX (6E)
-        // ============================================================
+            rootSymbol = ExtractRootSymbolFromInstrument(
+                instrument,
+                tradeId);
+        }
 
-        trade.Symbol = ResolveSymbol(kv);
+        var symbol = NormalizeFinalSymbol(
+            rootSymbol,
+            tradeId);
 
-        // ============================================================
-        // ACCOUNT
-        // ============================================================
-
-        trade.Account = Get(
+        var account = RequiredKey(
             kv,
             "Account",
-            "Sim101");
+            tradeId);
 
-        // ============================================================
-        // SIDE
-        // ============================================================
-
-        var sideText = Get(
+        var direction = RequiredKey(
             kv,
             "Direction",
-            Get(kv, "Side", "LONG"));
+            tradeId);
 
-        trade.Side =
-            sideText.Contains(
-                "SHORT",
-                StringComparison.OrdinalIgnoreCase)
-                ? TradeSide.Short
-                : TradeSide.Long;
+        TradeSide side;
 
-        // ============================================================
-        // QUANTITY
-        // ============================================================
-
-        trade.Quantity = ParseInt(
-            Get(
-                kv,
-                "TotalEntryQuantity",
-                Get(
-                    kv,
-                    "InitialQuantity",
-                    Get(
-                        kv,
-                        "Total Quantity",
-                        Get(
-                            kv,
-                            "Quantity",
-                            "1")))),
-            1);
-
-        // ============================================================
-        // ENTRY PRICE
-        // Supports new + legacy Recorder formats.
-        // ============================================================
-
-        trade.EntryPrice = ParseDecimal(
-            Get(
-                kv,
-                "WeightedAverageEntryPrice",
-                Get(
-                    kv,
-                    "InitialEntryPrice",
-                    Get(
-                        kv,
-                        "Avg Entry Price",
-                        Get(
-                            kv,
-                            "Entry Price",
-                            Get(
-                                kv,
-                                "EntryPrice",
-                                "0"))))));
-
-        // ============================================================
-        // EXIT PRICE
-        // ============================================================
-
-        trade.ExitPrice = ParseDecimal(
-            Get(
-                kv,
-                "WeightedAverageExitPrice",
-                Get(
-                    kv,
-                    "Avg Exit Price",
-                    Get(
-                        kv,
-                        "Exit Price",
-                        Get(
-                            kv,
-                            "ExitPrice",
-                            trade.EntryPrice.ToString(
-                                CultureInfo.InvariantCulture))))));
-
-        // ============================================================
-        // INITIAL STOP
-        // ============================================================
-
-        if (TryDecimal(
-                Get(
-                    kv,
-                    "InitialStopPrice",
-                    Get(
-                        kv,
-                        "InitialStopLoss",
-                        Get(
-                            kv,
-                            "StopLoss",
-                            ""))),
-                out var stop))
+        if (direction.Equals(
+                "LONG",
+                StringComparison.OrdinalIgnoreCase))
         {
-            trade.InitialStopLoss = stop;
+            side = TradeSide.Long;
+        }
+        else if (direction.Equals(
+                     "SHORT",
+                     StringComparison.OrdinalIgnoreCase))
+        {
+            side = TradeSide.Short;
+        }
+        else
+        {
+            throw new InvalidDataException(
+                $"Invalid Direction '{direction}' in trade '{tradeId}'.");
+        }
+
+        var quantity = RequiredPositiveInt(
+            kv,
+            "TotalEntryQuantity",
+            tradeId);
+
+        var entryPrice = RequiredDecimal(
+            kv,
+            "WeightedAverageEntryPrice",
+            tradeId);
+
+        var exitPrice = RequiredDecimal(
+            kv,
+            "WeightedAverageExitPrice",
+            tradeId);
+
+        var initialStop = OptionalDecimal(
+            kv,
+            "InitialStopPrice",
+            0m);
+
+        var entryTime = RequiredDate(
+            kv,
+            "InitialEntryTime",
+            tradeId);
+
+        var exitTime = RequiredDate(
+            kv,
+            "FinalExitTime",
+            tradeId);
+
+        var initialRiskUsd = OptionalMoney(
+            kv,
+            "InitialRiskUSD",
+            0m);
+
+        var realizedTicks = RequiredDecimal(
+            kv,
+            "TotalRealizedTicks",
+            tradeId);
+
+        var grossPnl = RequiredMoney(
+            kv,
+            "GrossRealizedPnL",
+            tradeId);
+
+        var realizedR = OptionalDecimal(
+            kv,
+            "RealizedR",
+            0m);
+
+        var maeTicks = OptionalDecimal(
+            kv,
+            "MAE_Ticks",
+            0m);
+
+        var maeUsd = OptionalMoney(
+            kv,
+            "MAE_USD",
+            0m);
+
+        var mfeTicks = OptionalDecimal(
+            kv,
+            "MFE_Ticks",
+            0m);
+
+        var mfeUsd = OptionalMoney(
+            kv,
+            "MFE_USD",
+            0m);
+
+        var tickSize = RequiredDecimal(
+            kv,
+            "TickSize",
+            tradeId);
+
+        var tickValue = RequiredMoney(
+            kv,
+            "TickValue",
+            tradeId);
+
+        if (tickSize <= 0)
+        {
+            throw new InvalidDataException(
+                $"TickSize must be > 0 in trade '{tradeId}'.");
+        }
+
+        if (tickValue <= 0)
+        {
+            throw new InvalidDataException(
+                $"TickValue must be > 0 in trade '{tradeId}'.");
         }
 
         // ============================================================
-        // TIMES
-        // ============================================================
-
-        trade.EntryTime = ParseDate(
-            Get(
-                kv,
-                "InitialEntryTime",
-                Get(
-                    kv,
-                    "Entry Time",
-                    Get(
-                        kv,
-                        "EntryTime",
-                        ""))),
-            Directory.GetCreationTime(directoryPath));
-
-        trade.ExitTime = ParseDate(
-            Get(
-                kv,
-                "FinalExitTime",
-                Get(
-                    kv,
-                    "Exit Time",
-                    Get(
-                        kv,
-                        "ExitTime",
-                        ""))),
-            trade.EntryTime);
-
-        trade.PreRollSeconds = ParseDouble(
-            Get(kv, "PreRollSeconds", "5"),
-            5);
-
-        trade.PostRollSeconds = ParseDouble(
-            Get(kv, "PostRollSeconds", "5"),
-            5);
-
-        // ============================================================
-        // INSTRUMENT SPEC
-        // ============================================================
-
-        var spec =
-            await _repository.GetInstrumentSpecAsync(trade.Symbol)
-            ?? InstrumentSpec
-                .GetDefaultCatalog()
-                .FirstOrDefault(
-                    s => s.Symbol.Equals(
-                        trade.Symbol,
-                        StringComparison.OrdinalIgnoreCase))
-            ?? new InstrumentSpec
-            {
-                Symbol = trade.Symbol,
-                Name = trade.Symbol,
-                TickSize = 0.25m,
-                TickValue = 12.50m,
-                PointValue = 50m,
-                DefaultCommission = 2.50m
-            };
-
-        await _repository.UpsertInstrumentSpecAsync(spec);
-
-        // ============================================================
-        // MULTI TARGET
-        // New Recorder format only.
+        // TARGETS
+        // Final format can contain multiple InitialTarget lines.
+        // Keep existing target/R aggregation behavior for now.
         // ============================================================
 
         decimal weightedR = 0m;
         int weightedQuantity = 0;
         decimal firstTargetPrice = 0m;
+
+        // ============================================================
+        // FINAL RECORDER TARGET CONTRACT
+        //
+        // The first contiguous Target1/Target2/Target3 block is the
+        // original planned target set for the initial position.
+        //
+        // Once Recorder emits an "Entry" line, the initial target
+        // block is finished. Later Target lines belong to subsequent
+        // position changes and must NOT change the original Planned R:R.
+        // ============================================================
+
+        bool initialTargetBlockStarted = false;
+        bool initialTargetBlockFinished = false;
 
         foreach (var rawLine in lines)
         {
@@ -331,17 +366,44 @@ public sealed class RecorderImporter
                 continue;
             }
 
-            var idx = line.IndexOf(':');
+            var colon = line.IndexOf(':');
 
-            if (idx < 0)
+            if (colon < 0)
                 continue;
 
-            var payload = line[(idx + 1)..].Trim();
+            var payload = line[(colon + 1)..].Trim();
 
             var parts = payload.Split(
                 '|',
                 StringSplitOptions.RemoveEmptyEntries |
                 StringSplitOptions.TrimEntries);
+
+            var targetType = parts.Length > 0
+                ? parts[0].Trim()
+                : string.Empty;
+
+            // "Entry" marks the end of the original target plan.
+            if (targetType.Equals(
+                    "Entry",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                if (initialTargetBlockStarted)
+                    initialTargetBlockFinished = true;
+
+                continue;
+            }
+
+            if (!targetType.StartsWith(
+                    "Target",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (initialTargetBlockFinished)
+                continue;
+
+            initialTargetBlockStarted = true;
 
             var qty = 0;
             var targetPrice = 0m;
@@ -358,17 +420,22 @@ public sealed class RecorderImporter
                         "Qty=",
                         StringComparison.OrdinalIgnoreCase))
                 {
-                    int.TryParse(
-                        p["Qty=".Length..].Trim(),
-                        NumberStyles.Integer,
-                        CultureInfo.InvariantCulture,
-                        out qty);
+                    if (!int.TryParse(
+                            p["Qty=".Length..].Trim(),
+                            NumberStyles.Integer,
+                            CultureInfo.InvariantCulture,
+                            out qty) ||
+                        qty <= 0)
+                    {
+                        throw new InvalidDataException(
+                            $"Invalid initial target quantity in trade '{tradeId}': {p}");
+                    }
                 }
                 else if (p.StartsWith(
                              "Price=",
                              StringComparison.OrdinalIgnoreCase))
                 {
-                    hasPrice = TryDecimal(
+                    hasPrice = TryDecimalStrict(
                         p["Price=".Length..].Trim(),
                         out targetPrice);
                 }
@@ -376,244 +443,146 @@ public sealed class RecorderImporter
                              "R=",
                              StringComparison.OrdinalIgnoreCase))
                 {
-                    hasR = TryDecimal(
+                    hasR = TryDecimalStrict(
                         p["R=".Length..].Trim(),
                         out targetR);
                 }
             }
 
-            if (firstTargetPrice == 0m && hasPrice)
+            if (hasPrice && firstTargetPrice == 0m)
                 firstTargetPrice = targetPrice;
 
-            if (hasR && qty > 0)
+            if (hasR)
             {
                 weightedR += targetR * qty;
                 weightedQuantity += qty;
             }
         }
+        if (initialTargetBlockStarted && weightedQuantity <= 0)
+        {
+            throw new InvalidDataException(
+                $"Initial target block contains no valid target quantity/R " +
+                $"data in trade '{tradeId}'.");
+        }
+
+        var initialPlannedRR =
+            weightedQuantity > 0
+                ? Math.Round(
+                    weightedR / weightedQuantity,
+                    4)
+                : 0m;
 
         if (firstTargetPrice > 0m)
+        {
+            // assigned after Trade is created
+        }
+        var trade = new Trade
+        {
+            FolderDirectory = directoryPath,
+            TradeId = tradeId,
+            Symbol = symbol,
+            Account = account,
+            Side = side,
+            Quantity = quantity,
+            EntryTime = entryTime,
+            ExitTime = exitTime,
+            EntryPrice = entryPrice,
+            ExitPrice = exitPrice,
+            InitialStopLoss = initialStop,
+            PreRollSeconds = RequiredOptionalDouble(
+                kv,
+                "PreRollSeconds",
+                5,
+                tradeId),
+            PostRollSeconds = RequiredOptionalDouble(
+                kv,
+                "PostRollSeconds",
+                5,
+                tradeId),
+
+            InitialRiskUSD = initialRiskUsd,
+            RealizedTicks = realizedTicks,
+            GrossPnL = grossPnl,
+            RealizedRR = realizedR,
+
+            MAETicks = maeTicks,
+            MAEUSD = maeUsd,
+            MFETicks = mfeTicks,
+            MFEUSD = mfeUsd
+        };
+
+        if (firstTargetPrice > 0)
             trade.InitialTakeProfit = firstTargetPrice;
 
         if (weightedQuantity > 0)
         {
-            trade.PlannedRR = Math.Round(
-                weightedR / weightedQuantity,
-                4);
-        }
+            trade.PlannedRR = initialPlannedRR;
 
-        // ============================================================
-        // RECORDED INITIAL RISK
-        // ============================================================
-
-        if (TryDecimal(
-                Get(kv, "InitialRiskUSD", ""),
-                out var recordedRisk))
-        {
-            trade.InitialRiskUSD = recordedRisk;
-        }
-
-        // ============================================================
-        // EXPECTED REWARD
-        // ============================================================
-
-        if (trade.InitialRiskUSD > 0 &&
-            trade.PlannedRR.HasValue)
-        {
-            trade.ExpectedRewardUSD =
-                Math.Round(
+            if (trade.InitialRiskUSD > 0)
+            {
+                trade.ExpectedRewardUSD = Math.Round(
                     trade.InitialRiskUSD *
                     trade.PlannedRR.Value,
                     2);
-        }
-
-        // Fallback only for files without recorded risk/RR.
-        if (trade.InitialRiskUSD <= 0 ||
-            !trade.PlannedRR.HasValue)
-        {
-            var planned =
-                RiskRewardEngine.CalculatePlannedRiskReward(
-                    trade.Side,
-                    trade.EntryPrice,
-                    trade.InitialStopLoss,
-                    trade.InitialTakeProfit,
-                    trade.Quantity,
-                    spec);
-
-            if (trade.InitialRiskUSD <= 0 &&
-                trade.InitialStopLoss.HasValue &&
-                planned.PlannedRiskUSD > 0)
-            {
-                trade.InitialRiskUSD =
-                    planned.PlannedRiskUSD;
-            }
-
-            if (trade.ExpectedRewardUSD <= 0 &&
-                planned.PlannedRewardUSD > 0)
-            {
-                trade.ExpectedRewardUSD =
-                    planned.PlannedRewardUSD;
-            }
-
-            if (!trade.PlannedRR.HasValue &&
-                trade.InitialTakeProfit.HasValue &&
-                trade.InitialStopLoss.HasValue)
-            {
-                trade.PlannedRR =
-                    planned.PlannedRR;
             }
         }
 
-        // ============================================================
-        // REALIZED TICKS
-        // Supports:
-        //   TotalRealizedTicks
-        //   Total Net Ticks
-        // ============================================================
+        trade.RealizedPoints = Math.Round(
+            trade.RealizedTicks * tickSize,
+            8);
 
-        if (TryDecimal(
-                Get(
-                    kv,
-                    "TotalRealizedTicks",
-                    Get(
-                        kv,
-                        "Total Net Ticks",
-                        Get(kv, "RealizedTicks", ""))),
-                out var realizedTicks))
+        // Final Recorder currently reports NetRealizedPnL as UNKNOWN.
+        // Do not fabricate a separate commission calculation here.
+        //
+        // Existing application semantics continue to expose Gross P&L
+        // through the NetPnL field until the explicit NetPnL/commission
+        // data contract is handled in the next integrity pass.
+        trade.NetPnL = trade.GrossPnL;
+
+        // Validate InstrumentSpec against actual Recorder tick data.
+        var existingSpec =
+            await _repository.GetInstrumentSpecAsync(symbol);
+
+        if (existingSpec is null)
         {
-            trade.RealizedTicks = realizedTicks;
+            var catalogSpec =
+                InstrumentSpec
+                    .GetDefaultCatalog()
+                    .FirstOrDefault(
+                        s => s.Symbol.Equals(
+                            symbol,
+                            StringComparison.OrdinalIgnoreCase));
+
+            if (catalogSpec is not null)
+            {
+                existingSpec = catalogSpec;
+            }
         }
 
-        if (trade.RealizedTicks != 0 &&
-            spec.TickSize > 0)
-        {
-            trade.RealizedPoints =
-                trade.RealizedTicks *
-                spec.TickSize;
-        }
-        else if (trade.EntryPrice != 0 &&
-                 trade.ExitPrice != 0)
-        {
-            trade.RealizedPoints =
-                trade.Side == TradeSide.Long
-                    ? trade.ExitPrice - trade.EntryPrice
-                    : trade.EntryPrice - trade.ExitPrice;
-        }
+        var spec = existingSpec ??
+                   new InstrumentSpec
+                   {
+                       Symbol = symbol,
+                       Name = symbol,
+                       TickSize = tickSize,
+                       TickValue = tickValue,
+                       PointValue = tickValue / tickSize,
+                       DefaultCommission = 0m
+                   };
 
-        // ============================================================
-        // REALIZED R
-        // ============================================================
-
-        if (TryDecimal(
-                Get(kv, "RealizedR", ""),
-                out var realizedR))
+        // Final Recorder is authoritative for contract economics.
+        if (spec.TickSize != tickSize ||
+            spec.TickValue != tickValue)
         {
-            trade.RealizedRR = realizedR;
+            spec.TickSize = tickSize;
+            spec.TickValue = tickValue;
+            spec.PointValue =
+                tickSize > 0
+                    ? tickValue / tickSize
+                    : 0;
         }
 
-        // ============================================================
-        // GROSS P&L
-        // Supports:
-        //   GrossRealizedPnL
-        //   Gross Realized PnL
-        //   Total PnL
-        // ============================================================
-
-        if (TryDecimal(
-                Get(
-                    kv,
-                    "GrossRealizedPnL",
-                    Get(
-                        kv,
-                        "Gross Realized PnL",
-                        Get(
-                            kv,
-                            "Total PnL",
-                            Get(kv, "GrossPnL", "")))),
-                out var grossPnL))
-        {
-            trade.GrossPnL = grossPnL;
-        }
-
-        // ============================================================
-        // COMMISSION
-        // ============================================================
-
-        if (TryDecimal(
-                Get(kv, "Commission", ""),
-                out var commission))
-        {
-            trade.Commission = commission;
-        }
-
-        // ============================================================
-        // NET P&L
-        // If Recorder explicitly supplies NetRealizedPnL, use it.
-        // If old Recorder has only Total PnL / Gross PnL, use that.
-        // Never silently turn a valid legacy P&L into zero.
-        // ============================================================
-
-        if (TryDecimal(
-                Get(
-                    kv,
-                    "NetRealizedPnL",
-                    Get(
-                        kv,
-                        "Net PnL",
-                        Get(kv, "NetPnL", ""))),
-                out var netPnL))
-        {
-            trade.NetPnL = netPnL;
-        }
-        else
-        {
-            trade.NetPnL = trade.GrossPnL;
-        }
-
-        // ============================================================
-        // MAE / MFE
-        // Only files that actually contain them get these values.
-        // ============================================================
-
-        if (TryDecimal(
-                Get(
-                    kv,
-                    "MAE_Ticks",
-                    Get(kv, "MAETicks", "")),
-                out var maeTicks))
-        {
-            trade.MAETicks = maeTicks;
-        }
-
-        if (TryDecimal(
-                Get(
-                    kv,
-                    "MAE_USD",
-                    Get(kv, "MAEUSD", "")),
-                out var maeUsd))
-        {
-            trade.MAEUSD = maeUsd;
-        }
-
-        if (TryDecimal(
-                Get(
-                    kv,
-                    "MFE_Ticks",
-                    Get(kv, "MFETicks", "")),
-                out var mfeTicks))
-        {
-            trade.MFETicks = mfeTicks;
-        }
-
-        if (TryDecimal(
-                Get(
-                    kv,
-                    "MFE_USD",
-                    Get(kv, "MFEUSD", "")),
-                out var mfeUsd))
-        {
-            trade.MFEUSD = mfeUsd;
-        }
+        await _repository.UpsertInstrumentSpecAsync(spec);
 
         // ============================================================
         // ACTIVITY LOG
@@ -668,7 +637,7 @@ public sealed class RecorderImporter
         }
 
         // ============================================================
-        // VIDEOS
+        // VIDEO
         // ============================================================
 
         for (var i = 0; i < videoPaths.Count; i++)
@@ -690,77 +659,745 @@ public sealed class RecorderImporter
         return trade;
     }
 
-    private static string ResolveSymbol(
-        Dictionary<string, string> kv)
+    private static void RepairEntryFieldsFromExecutions(
+        Dictionary<string, string> kv,
+        string executionsPath)
     {
-        var root = Get(kv, "RootSymbol", "");
+        if (!File.Exists(executionsPath))
+            return;
 
-        if (!string.IsNullOrWhiteSpace(root))
-            return NormalizeSymbol(root);
-
-        var symbol = Get(kv, "Symbol", "");
-
-        if (!string.IsNullOrWhiteSpace(symbol))
-            return NormalizeSymbol(symbol);
-
-        var instrument = Get(kv, "Instrument", "");
-
-        if (string.IsNullOrWhiteSpace(instrument))
-            return "6E";
-
-        // E-mini S&P 500 (ES)
-        var match = Regex.Match(
-            instrument,
-            @"\(([A-Z0-9]+)\)",
-            RegexOptions.IgnoreCase);
-
-        if (match.Success)
-            return NormalizeSymbol(
-                match.Groups[1].Value);
-
-        // Common futures descriptions.
-        if (instrument.Contains(
-                "Euro FX",
-                StringComparison.OrdinalIgnoreCase))
+        if (!TryGetSmartValue(
+                kv,
+                "TotalEntryQuantity",
+                out var existingQuantity))
         {
-            return "6E";
+            existingQuantity = string.Empty;
         }
 
-        if (instrument.Contains(
-                "S&P 500",
-                StringComparison.OrdinalIgnoreCase))
+        if (!TryGetSmartValue(
+                kv,
+                "WeightedAverageEntryPrice",
+                out var existingEntryPrice))
         {
-            return "ES";
+            existingEntryPrice = string.Empty;
         }
 
-        // Contract style: ES SEP26 / 6E SEP26
-        var token = instrument
+        if (!TryGetSmartValue(
+                kv,
+                "InitialEntryTime",
+                out var existingEntryTime))
+        {
+            existingEntryTime = string.Empty;
+        }
+
+        var entryIsMissing =
+            string.IsNullOrWhiteSpace(existingQuantity) ||
+            existingQuantity.Trim() == "0" ||
+            existingQuantity.Equals(
+                "UNKNOWN",
+                StringComparison.OrdinalIgnoreCase);
+
+        var entryPriceIsMissing =
+            string.IsNullOrWhiteSpace(existingEntryPrice) ||
+            existingEntryPrice.Trim().Equals(
+                "UNKNOWN",
+                StringComparison.OrdinalIgnoreCase);
+
+        var entryTimeIsMissing =
+            string.IsNullOrWhiteSpace(existingEntryTime) ||
+            existingEntryTime.Trim().Equals(
+                "UNKNOWN",
+                StringComparison.OrdinalIgnoreCase);
+
+        if (!entryIsMissing &&
+            !entryPriceIsMissing &&
+            !entryTimeIsMissing)
+        {
+            return;
+        }
+
+        var rows = File.ReadAllLines(executionsPath);
+
+        if (rows.Length < 2)
+            return;
+
+        var headers = SplitCsvLine(rows[0]);
+
+        var orderNameIndex =
+            FindColumn(headers, "OrderName");
+
+        var timeIndex =
+            FindColumn(headers, "Time");
+
+        var quantityIndex =
+            FindColumn(headers, "Quantity");
+
+        var priceIndex =
+            FindColumn(headers, "Price");
+
+        if (orderNameIndex < 0 ||
+            timeIndex < 0 ||
+            quantityIndex < 0 ||
+            priceIndex < 0)
+        {
+            return;
+        }
+
+        var totalQuantity = 0;
+        decimal weightedPrice = 0m;
+        DateTime? firstEntryTime = null;
+
+        for (var i = 1; i < rows.Length; i++)
+        {
+            var fields = SplitCsvLine(rows[i]);
+
+            if (fields.Count <= Math.Max(
+                    Math.Max(orderNameIndex, timeIndex),
+                    Math.Max(quantityIndex, priceIndex)))
+            {
+                continue;
+            }
+
+            var orderName =
+                fields[orderNameIndex].Trim();
+
+            // Recorder currently writes Entry executions with
+            // OrderName="Entry" even when IsEntry/FillRole are wrong.
+            if (!orderName.Equals(
+                    "Entry",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!int.TryParse(
+                    fields[quantityIndex].Trim(),
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var quantity) ||
+                quantity <= 0)
+            {
+                continue;
+            }
+
+            if (!TryDecimalStrict(
+                    fields[priceIndex].Trim(),
+                    out var price))
+            {
+                continue;
+            }
+
+            if (!DateTime.TryParse(
+                    fields[timeIndex].Trim(),
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.AssumeLocal |
+                    DateTimeStyles.AllowWhiteSpaces,
+                    out var timestamp))
+            {
+                continue;
+            }
+
+            totalQuantity += quantity;
+            weightedPrice += price * quantity;
+
+            if (!firstEntryTime.HasValue ||
+                timestamp < firstEntryTime.Value)
+            {
+                firstEntryTime = timestamp;
+            }
+        }
+
+        if (totalQuantity <= 0)
+            return;
+
+        if (entryIsMissing)
+        {
+            kv[NormalizeFieldKey("TotalEntryQuantity")] =
+                totalQuantity.ToString(
+                    CultureInfo.InvariantCulture);
+        }
+
+        if (entryPriceIsMissing)
+        {
+            kv[NormalizeFieldKey("WeightedAverageEntryPrice")] =
+                (weightedPrice / totalQuantity).ToString(
+                    "0.########",
+                    CultureInfo.InvariantCulture);
+        }
+
+        if (entryTimeIsMissing &&
+            firstEntryTime.HasValue)
+        {
+            kv[NormalizeFieldKey("InitialEntryTime")] =
+                firstEntryTime.Value.ToString(
+                    "yyyy-MM-dd HH:mm:ss.fff",
+                    CultureInfo.InvariantCulture);
+        }
+    }
+
+    private static List<string> SplitCsvLine(string line)
+    {
+        var result = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var quoted = false;
+
+        foreach (var ch in line)
+        {
+            if (ch == '"')
+            {
+                quoted = !quoted;
+                continue;
+            }
+
+            if (ch == ',' && !quoted)
+            {
+                result.Add(current.ToString());
+                current.Clear();
+                continue;
+            }
+
+            current.Append(ch);
+        }
+
+        result.Add(current.ToString());
+
+        return result;
+    }
+
+    private static int FindColumn(
+        IReadOnlyList<string> headers,
+        string name)
+    {
+        var normalizedTarget =
+            NormalizeFieldKey(name);
+
+        for (var i = 0; i < headers.Count; i++)
+        {
+            if (NormalizeFieldKey(headers[i])
+                .Equals(
+                    normalizedTarget,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+    private static Dictionary<string, string> ParseKeyValueLines(
+        IEnumerable<string> lines)
+    {
+        var kv = new Dictionary<string, string>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.Trim();
+
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            var idx = line.IndexOf(':');
+
+            if (idx <= 0)
+                continue;
+
+            var key = NormalizeFieldKey(line[..idx]);
+            var value = line[(idx + 1)..].Trim();
+
+            if (key.Length == 0)
+                continue;
+
+            kv[key] = value;
+        }
+
+        return kv;
+    }
+
+    private static string NormalizeFieldKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return string.Empty;
+
+        return Regex.Replace(
+            key.Trim(),
+            @"[^A-Za-z0-9]",
+            "");
+    }
+
+    private static IEnumerable<string> GetFieldAliases(
+        string key)
+    {
+        var normalized = NormalizeFieldKey(key);
+
+        return normalized switch
+        {
+            "TradeId" => new[]
+            {
+                "TradeID"
+            },
+
+            "RootSymbol" => new[]
+            {
+                "Symbol",
+                "Root"
+            },
+
+            "TotalEntryQuantity" => new[]
+            {
+                "TotalEntryQty",
+                "EntryQuantity",
+                "EntryQty",
+                "TotalQuantity",
+                "InitialQuantity"
+            },
+
+            "WeightedAverageEntryPrice" => new[]
+            {
+                "AvgEntryPrice",
+                "AverageEntryPrice",
+                "EntryPrice",
+                "InitialEntryPrice"
+            },
+
+            "WeightedAverageExitPrice" => new[]
+            {
+                "AvgExitPrice",
+                "AverageExitPrice",
+                "ExitPrice"
+            },
+
+            "InitialStopPrice" => new[]
+            {
+                "StopPrice",
+                "InitialStop",
+                "InitialStopLoss"
+            },
+
+            "InitialEntryTime" => new[]
+            {
+                "EntryTime"
+            },
+
+            "FinalExitTime" => new[]
+            {
+                "ExitTime"
+            },
+
+            "InitialRiskUSD" => new[]
+            {
+                "InitialRisk",
+                "RiskUSD",
+                "Risk"
+            },
+
+            "TotalRealizedTicks" => new[]
+            {
+                "TotalNetTicks",
+                "RealizedTicks",
+                "RealizedTick",
+                "TotalTicks",
+                "TotalNetTick",
+                "NetTicks"
+            },
+
+            "GrossRealizedPnL" => new[]
+            {
+                "GrossPnL",
+                "GrossRealizedPnl",
+                "TotalPnL",
+                "TotalPnl",
+                "RealizedPnL",
+                "PnL"
+            },
+
+            "RealizedR" => new[]
+            {
+                "RealizedRR",
+                "RR"
+            },
+
+            "MAETicks" => new[]
+            {
+                "MAETick"
+            },
+
+            "MAEUSD" => new[]
+            {
+                "MAE"
+            },
+
+            "MFETicks" => new[]
+            {
+                "MFETick"
+            },
+
+            "MFEUSD" => new[]
+            {
+                "MFE"
+            },
+
+            "TickSize" => new[]
+            {
+                "Ticksize"
+            },
+
+            "TickValue" => new[]
+            {
+                "Tickvalue"
+            },
+
+            "PreRollSeconds" => new[]
+            {
+                "PreRoll"
+            },
+
+            "PostRollSeconds" => new[]
+            {
+                "PostRoll"
+            },
+
+            _ => Array.Empty<string>()
+        };
+    }
+
+    private static bool TryGetSmartValue(
+        Dictionary<string, string> kv,
+        string key,
+        out string value)
+    {
+        var normalizedKey = NormalizeFieldKey(key);
+
+        // 1. Exact normalized key.
+        if (kv.TryGetValue(normalizedKey, out value!) &&
+            !string.IsNullOrWhiteSpace(value))
+        {
+            value = value.Trim();
+            return true;
+        }
+
+        // 2. Explicit semantic aliases.
+        foreach (var alias in GetFieldAliases(normalizedKey))
+        {
+            var normalizedAlias = NormalizeFieldKey(alias);
+
+            if (kv.TryGetValue(normalizedAlias, out value!) &&
+                !string.IsNullOrWhiteSpace(value))
+            {
+                value = value.Trim();
+                return true;
+            }
+        }
+
+        // 3. Final normalized comparison against every field actually
+        // present in the Recorder file.
+        //
+        // This protects against harmless formatting/name variations
+        // without depending on line order.
+        foreach (var pair in kv)
+        {
+            var existingKey = NormalizeFieldKey(pair.Key);
+
+            if (existingKey.Equals(
+                    normalizedKey,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                if (!string.IsNullOrWhiteSpace(pair.Value))
+                {
+                    value = pair.Value.Trim();
+                    return true;
+                }
+            }
+
+            foreach (var alias in GetFieldAliases(normalizedKey))
+            {
+                var normalizedAlias =
+                    NormalizeFieldKey(alias);
+
+                if (existingKey.Equals(
+                        normalizedAlias,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!string.IsNullOrWhiteSpace(pair.Value))
+                    {
+                        value = pair.Value.Trim();
+                        return true;
+                    }
+                }
+            }
+        }
+
+        value = string.Empty;
+        return false;
+    }
+    private static string RequiredKey(
+        Dictionary<string, string> kv,
+        string key,
+        string tradeId)
+    {
+        if (TryGetSmartValue(kv, key, out var value))
+            return value;
+
+        throw new InvalidDataException(
+            $"Required Recorder field '{key}' is missing in trade '{tradeId}'.");
+    }
+
+    private static string OptionalKey(
+        Dictionary<string, string> kv,
+        string key,
+        string fallback)
+    {
+        return TryGetSmartValue(kv, key, out var value)
+            ? value
+            : fallback;
+    }
+
+    private static string ExtractRootSymbolFromInstrument(
+        string instrument,
+        string tradeId)
+    {
+        var text = instrument.Trim();
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new InvalidDataException(
+                $"Instrument is empty in trade '{tradeId}'.");
+        }
+
+        // Examples:
+        // ES SEP26
+        // 6E SEP26
+        var firstToken = text
             .Split(
-                ' ',
+                new[] { ' ', '\t' },
                 StringSplitOptions.RemoveEmptyEntries)
             .FirstOrDefault();
 
-        return string.IsNullOrWhiteSpace(token)
-            ? "6E"
-            : NormalizeSymbol(token);
-    }
+        if (!string.IsNullOrWhiteSpace(firstToken) &&
+            Regex.IsMatch(firstToken, @"^[A-Z0-9]+$"))
+        {
+            return firstToken;
+        }
 
-    private static string NormalizeSymbol(
-        string value)
+        // Examples:
+        // E-mini S&P 500 (ES)
+        // Euro FX (6E)
+        var match = Regex.Match(
+            text,
+            @"\(([A-Z0-9]+)\)\s*$");
+
+        if (match.Success)
+            return match.Groups[1].Value;
+
+        throw new InvalidDataException(
+            $"Unable to derive RootSymbol from Instrument '{instrument}' " +
+            $"in trade '{tradeId}'.");
+    }
+    private static string NormalizeFinalSymbol(
+        string value,
+        string tradeId)
     {
         var text = value.Trim().ToUpperInvariant();
 
-        var match = Regex.Match(
-            text,
-            @"\b(6E|ES|NQ|MES|MNQ|CL|GC|RTY|ZB)\b");
+        if (!Regex.IsMatch(text, @"^[A-Z0-9]+$"))
+        {
+            throw new InvalidDataException(
+                $"Invalid RootSymbol '{value}' in trade '{tradeId}'.");
+        }
 
-        return match.Success
-            ? match.Groups[1].Value
-            : text
-                .Split(
-                    ' ',
-                    StringSplitOptions.RemoveEmptyEntries)
-                .FirstOrDefault("6E");
+        return text;
+    }
+
+    private static decimal OptionalDecimal(
+        Dictionary<string, string> kv,
+        string key,
+        decimal fallback)
+    {
+        if (!TryGetSmartValue(kv, key, out var text))
+            return fallback;
+
+        return TryDecimalStrict(text, out var value)
+            ? value
+            : fallback;
+    }
+
+    private static decimal OptionalMoney(
+        Dictionary<string, string> kv,
+        string key,
+        decimal fallback)
+    {
+        if (!TryGetSmartValue(kv, key, out var text))
+            return fallback;
+
+        if (text.Equals(
+                "UNKNOWN",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return fallback;
+        }
+
+        return TryDecimalStrict(text, out var value)
+            ? value
+            : fallback;
+    }
+    private static int RequiredPositiveInt(
+        Dictionary<string, string> kv,
+        string key,
+        string tradeId)
+    {
+        var text = RequiredKey(kv, key, tradeId);
+
+        if (!int.TryParse(
+                text,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out var value) ||
+            value <= 0)
+        {
+            throw new InvalidDataException(
+                $"Required positive integer '{key}' is invalid in trade '{tradeId}': '{text}'.");
+        }
+
+        return value;
+    }
+
+    private static decimal RequiredDecimal(
+        Dictionary<string, string> kv,
+        string key,
+        string tradeId)
+    {
+        var text = RequiredKey(kv, key, tradeId);
+
+        if (!TryDecimalStrict(text, out var value))
+        {
+            throw new InvalidDataException(
+                $"Required decimal '{key}' is invalid in trade '{tradeId}': '{text}'.");
+        }
+
+        return value;
+    }
+
+    private static decimal RequiredMoney(
+        Dictionary<string, string> kv,
+        string key,
+        string tradeId)
+    {
+        var text = RequiredKey(kv, key, tradeId);
+
+        if (text.Equals(
+                "UNKNOWN",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(
+                $"Required monetary field '{key}' is UNKNOWN in trade '{tradeId}'.");
+        }
+
+        if (!TryDecimalStrict(text, out var value))
+        {
+            throw new InvalidDataException(
+                $"Required monetary field '{key}' is invalid in trade '{tradeId}': '{text}'.");
+        }
+
+        return value;
+    }
+
+    private static DateTime RequiredDate(
+        Dictionary<string, string> kv,
+        string key,
+        string tradeId)
+    {
+        var text = RequiredKey(kv, key, tradeId);
+
+        var formats = new[]
+        {
+            "yyyy-MM-dd HH:mm:ss.fff",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-ddTHH:mm:ss.fff",
+            "yyyy-MM-ddTHH:mm:ss",
+            "O"
+        };
+
+        if (DateTime.TryParseExact(
+                text,
+                formats,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeLocal |
+                DateTimeStyles.AllowWhiteSpaces,
+                out var exact))
+        {
+            return exact;
+        }
+
+        if (DateTime.TryParse(
+                text,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeLocal |
+                DateTimeStyles.AllowWhiteSpaces,
+                out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new InvalidDataException(
+            $"Required date '{key}' is invalid in trade '{tradeId}': '{text}'.");
+    }
+
+    private static double RequiredOptionalDouble(
+        Dictionary<string, string> kv,
+        string key,
+        double fallback,
+        string tradeId)
+    {
+        if (!kv.TryGetValue(key, out var text) ||
+            string.IsNullOrWhiteSpace(text))
+        {
+            return fallback;
+        }
+
+        if (!double.TryParse(
+                text.Trim(),
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var value) ||
+            value < 0)
+        {
+            throw new InvalidDataException(
+                $"Field '{key}' is invalid in trade '{tradeId}': '{text}'.");
+        }
+
+        return value;
+    }
+
+    private static bool TryDecimalStrict(
+        string text,
+        out decimal result)
+    {
+        result = 0m;
+
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        var normalized = text.Trim()
+            .Replace("$", "")
+            .Replace("€", "")
+            .Replace("£", "")
+            .Replace(",", "")
+            .Replace("USD", "",
+                StringComparison.OrdinalIgnoreCase)
+            .Replace("Ticks", "",
+                StringComparison.OrdinalIgnoreCase)
+            .Replace("Tick", "",
+                StringComparison.OrdinalIgnoreCase)
+            .Trim();
+
+        return decimal.TryParse(
+            normalized,
+            NumberStyles.AllowLeadingSign |
+            NumberStyles.AllowDecimalPoint |
+            NumberStyles.AllowLeadingWhite |
+            NumberStyles.AllowTrailingWhite,
+            CultureInfo.InvariantCulture,
+            out result);
     }
 
     private static bool IsVideo(string path)
@@ -774,121 +1411,6 @@ public sealed class RecorderImporter
                || path.EndsWith(
                    ".avi",
                    StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string Get(
-        Dictionary<string, string> kv,
-        string key,
-        string fallback)
-    {
-        return kv.TryGetValue(
-                   key,
-                   out var value) &&
-               !string.IsNullOrWhiteSpace(value)
-            ? value
-            : fallback;
-    }
-
-    private static int ParseInt(
-        string value,
-        int fallback)
-    {
-        return int.TryParse(
-                   value,
-                   NumberStyles.Integer,
-                   CultureInfo.InvariantCulture,
-                   out var number)
-            ? Math.Max(1, number)
-            : fallback;
-    }
-
-    private static decimal ParseDecimal(
-        string value)
-    {
-        return TryDecimal(
-                   value,
-                   out var number)
-            ? number
-            : 0m;
-    }
-
-    private static bool TryDecimal(
-        string value,
-        out decimal result)
-    {
-        result = 0m;
-
-        if (string.IsNullOrWhiteSpace(value))
-            return false;
-
-        var normalized = value.Trim()
-            .Replace("$", "")
-            .Replace("€", "")
-            .Replace("£", "")
-            .Replace("USD", "",
-                StringComparison.OrdinalIgnoreCase)
-            .Replace(",", "")
-            .Replace("Ticks", "",
-                StringComparison.OrdinalIgnoreCase)
-            .Replace("Tick", "",
-                StringComparison.OrdinalIgnoreCase)
-            .Trim();
-
-        return decimal.TryParse(
-            normalized,
-            NumberStyles.Any,
-            CultureInfo.InvariantCulture,
-            out result);
-    }
-
-    private static double ParseDouble(
-        string value,
-        double fallback)
-    {
-        return double.TryParse(
-                   value,
-                   NumberStyles.Any,
-                   CultureInfo.InvariantCulture,
-                   out var number)
-            ? number
-            : fallback;
-    }
-
-    private static DateTime ParseDate(
-        string value,
-        DateTime fallback)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return fallback;
-
-        var formats = new[]
-        {
-            "yyyy-MM-dd HH:mm:ss.fff",
-            "yyyy-MM-dd HH:mm:ss",
-            "yyyy-MM-ddTHH:mm:ss.fff",
-            "yyyy-MM-ddTHH:mm:ss",
-            "O"
-        };
-
-        if (DateTime.TryParseExact(
-                value,
-                formats,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeLocal |
-                DateTimeStyles.AllowWhiteSpaces,
-                out var exact))
-        {
-            return exact;
-        }
-
-        return DateTime.TryParse(
-                   value,
-                   CultureInfo.InvariantCulture,
-                   DateTimeStyles.AssumeLocal |
-                   DateTimeStyles.AllowWhiteSpaces,
-                   out var parsed)
-            ? parsed
-            : fallback;
     }
 
     private static TradeEvent NewEvent(

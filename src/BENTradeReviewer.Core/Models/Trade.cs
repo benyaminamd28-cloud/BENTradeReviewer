@@ -43,6 +43,7 @@ public sealed class Trade
     // User annotations
     public string Notes { get; set; } = string.Empty;
     public List<string> Tags { get; set; } = new();
+    public TradeMarketContext MarketContext { get; set; } = new();
 
     // Related
     public List<TradeVideo> Videos { get; set; } = new();
