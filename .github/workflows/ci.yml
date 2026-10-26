@@ -1,0 +1,53 @@
+name: Build and Test
+
+on:
+  push:
+    branches:
+      - main
+      - "chore/**"
+      - "release/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore BENTradeReviewer.sln
+
+      - name: Build Release x64
+        run: dotnet build BENTradeReviewer.sln --configuration Release --platform x64 --no-restore
+
+      - name: Run unit tests
+        run: dotnet test src/BENTradeReviewer.Tests/BENTradeReviewer.Tests.csproj --configuration Release --no-restore
+
+      - name: Publish self-contained Windows x64 app
+        run: dotnet publish src/BENTradeReviewer.UI/BENTradeReviewer.UI.csproj --configuration Release --runtime win-x64 --self-contained true -p:Platform=x64 -o artifacts/BENTradeReviewer-win-x64
+
+      - name: Package ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          Compress-Archive -Path artifacts/BENTradeReviewer-win-x64/* -DestinationPath artifacts/BENTradeReviewer-win-x64.zip -Force
+
+      - name: Upload build package
+        uses: actions/upload-artifact@v4
+        with:
+          name: BENTradeReviewer-win-x64
+          path: artifacts/BENTradeReviewer-win-x64.zip
+          if-no-files-found: error
+          retention-days: 14
