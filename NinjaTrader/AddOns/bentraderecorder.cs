@@ -4145,15 +4145,16 @@ namespace NinjaTrader.Custom.AddOns
             OrderEventRecord record)
         {
             bool isEntryOrder =
-                (Direction ==
-                    TradeDirection.Long &&
-                 order.OrderAction ==
-                    OrderAction.Buy) ||
+                (Direction == TradeDirection.Long &&
+                 order.OrderAction == OrderAction.Buy) ||
 
-                (Direction ==
-                    TradeDirection.Short &&
-                 order.OrderAction ==
-                    OrderAction.SellShort);
+                (Direction == TradeDirection.Short &&
+                 (order.OrderAction == OrderAction.SellShort ||
+                  (order.OrderAction == OrderAction.Sell &&
+                   string.Equals(
+                       order.Name,
+                       "Entry",
+                       StringComparison.OrdinalIgnoreCase))));
 
             if (!isEntryOrder)
                 return;
@@ -4548,6 +4549,8 @@ namespace NinjaTrader.Custom.AddOns
                     execution.Order != null &&
                     TryClassifyAction(
                         execution.Order.OrderAction,
+                        execution.MarketPosition,
+                        execution.Order.Name,
                         out isEntry);
 
                 if (!isClassified)
@@ -4626,10 +4629,13 @@ namespace NinjaTrader.Custom.AddOns
 
         private bool TryClassifyAction(
             OrderAction action,
+            MarketPosition executionMarketPosition,
+            string orderName,
             out bool isEntry)
         {
-            if (Direction ==
-                TradeDirection.Long)
+            isEntry = false;
+
+            if (Direction == TradeDirection.Long)
             {
                 if (action == OrderAction.Buy)
                 {
@@ -4638,28 +4644,43 @@ namespace NinjaTrader.Custom.AddOns
                 }
 
                 if (action == OrderAction.Sell)
-                {
-                    isEntry = false;
                     return true;
-                }
 
-                isEntry = false;
                 return false;
             }
 
-            if (action == OrderAction.SellShort)
+            if (Direction == TradeDirection.Short)
             {
-                isEntry = true;
-                return true;
+                if (action == OrderAction.SellShort)
+                {
+                    isEntry = true;
+                    return true;
+                }
+
+                if (action == OrderAction.BuyToCover)
+                    return true;
+
+                // Broker/provider-specific mapping verified
+                // against the actual NinjaTrader execution ledger.
+                if (action == OrderAction.Sell &&
+                    executionMarketPosition == MarketPosition.Short &&
+                    string.Equals(
+                        orderName,
+                        "Entry",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    isEntry = true;
+
+                    WriteLog(
+                        "[CLASSIFICATION FALLBACK] " +
+                        "Sell + Short + Entry classified as SHORT ENTRY.");
+
+                    return true;
+                }
+
+                return false;
             }
 
-            if (action == OrderAction.BuyToCover)
-            {
-                isEntry = false;
-                return true;
-            }
-
-            isEntry = false;
             return false;
         }
 
