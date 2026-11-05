@@ -4145,15 +4145,14 @@ namespace NinjaTrader.Custom.AddOns
             OrderEventRecord record)
         {
             bool isEntryOrder =
-                (Direction ==
-                    TradeDirection.Long &&
-                 order.OrderAction ==
-                    OrderAction.Buy) ||
+                (Direction == TradeDirection.Long &&
+                 order.OrderAction == OrderAction.Buy) ||
 
-                (Direction ==
-                    TradeDirection.Short &&
-                 order.OrderAction ==
-                    OrderAction.SellShort);
+                // Short entries on this connection arrive as Sell.
+                // The NinjaTrader order name can be empty.
+                (Direction == TradeDirection.Short &&
+                 (order.OrderAction == OrderAction.SellShort ||
+                  order.OrderAction == OrderAction.Sell));
 
             if (!isEntryOrder)
                 return;
@@ -4548,6 +4547,8 @@ namespace NinjaTrader.Custom.AddOns
                     execution.Order != null &&
                     TryClassifyAction(
                         execution.Order.OrderAction,
+                        execution.MarketPosition,
+                        execution.Order.Name,
                         out isEntry);
 
                 if (!isClassified)
@@ -4626,10 +4627,13 @@ namespace NinjaTrader.Custom.AddOns
 
         private bool TryClassifyAction(
             OrderAction action,
+            MarketPosition executionMarketPosition,
+            string orderName,
             out bool isEntry)
         {
-            if (Direction ==
-                TradeDirection.Long)
+            isEntry = false;
+
+            if (Direction == TradeDirection.Long)
             {
                 if (action == OrderAction.Buy)
                 {
@@ -4638,28 +4642,39 @@ namespace NinjaTrader.Custom.AddOns
                 }
 
                 if (action == OrderAction.Sell)
-                {
-                    isEntry = false;
                     return true;
-                }
 
-                isEntry = false;
                 return false;
             }
 
-            if (action == OrderAction.SellShort)
+            if (Direction == TradeDirection.Short)
             {
-                isEntry = true;
-                return true;
+                if (action == OrderAction.SellShort)
+                {
+                    isEntry = true;
+                    return true;
+                }
+
+                if (action == OrderAction.BuyToCover)
+                    return true;
+
+                // This connection reports short opening executions as Sell.
+                // BuyToCover remains the short exit action.
+                if (action == OrderAction.Sell &&
+                    executionMarketPosition == MarketPosition.Short)
+                {
+                    isEntry = true;
+
+                    WriteLog(
+                        "[CLASSIFICATION FALLBACK] " +
+                        "Sell + Short classified as SHORT ENTRY.");
+
+                    return true;
+                }
+
+                return false;
             }
 
-            if (action == OrderAction.BuyToCover)
-            {
-                isEntry = false;
-                return true;
-            }
-
-            isEntry = false;
             return false;
         }
 
