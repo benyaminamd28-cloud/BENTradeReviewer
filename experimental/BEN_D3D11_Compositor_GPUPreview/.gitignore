@@ -1,0 +1,7 @@
+bin/
+obj/
+*.bmp
+*.h264
+*.mp4
+*.log
+*.bak
